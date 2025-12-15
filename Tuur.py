@@ -1,306 +1,267 @@
 import pygame
-import math
 import random
-
-WIDTH, HEIGHT = 960, 540
-BG_COLOR = (32, 36, 48)
+import math
+import sys
 
 pygame.init()
+
+# ======================
+# CONFIG
+# ======================
+WIDTH, HEIGHT = 900, 500
+FPS = 60
+
+WHITE = (240, 240, 240)
+BLACK = (20, 20, 30)
+RED = (220, 60, 60)
+GREEN = (60, 220, 120)
+YELLOW = (240, 220, 70)
+BLUE = (80, 140, 255)
+
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Don't Get Caught")
 clock = pygame.time.Clock()
-font = pygame.font.SysFont("arial", 20)
 
-# --- Scene base ---
-class Scene:
-    def handle_event(self, e): pass
-    def update(self, dt): pass
-    def draw(self, s): pass
+font = pygame.font.SysFont(None, 26)
+big_font = pygame.font.SysFont(None, 42)
 
-class SceneManager:
-    def __init__(self, start_scene):
-        self.scene = start_scene
-    def switch(self, scene):
-        self.scene = scene
+# ======================
+# PLAYER
+# ======================
+player_pos = pygame.Vector2(WIDTH // 2, HEIGHT // 2)
+phone_up = False
 
-# --- Entities ---
-class Player:
-    def __init__(self, x, y):
-        self.pos = pygame.Vector2(x, y)
-        self.phone_up = False
-    def toggle_phone(self):
-        self.phone_up = not self.phone_up
-    def draw(self, s):
-        pygame.draw.rect(s, (70, 70, 90), (self.pos.x-120, self.pos.y, 240, 30))
-        color = (80, 180, 120) if not self.phone_up else (220, 160, 60)
-        pygame.draw.circle(s, color, (int(self.pos.x), int(self.pos.y-20)), 20)
-        if self.phone_up:
-            pygame.draw.rect(s, (20, 20, 20), (self.pos.x+25, self.pos.y-40, 16, 28))
+# ======================
+# BOSS
+# ======================
+boss_pos = pygame.Vector2(150, 150)
+boss_angle = 0
+boss_speed = 70
+look_cone_deg = 60
+look_distance = 260
+turn_timer = 0
 
-class Boss:
-    def __init__(self, path_points):
-        self.path = [pygame.Vector2(p) for p in path_points]
-        self.idx = 0
-        self.pos = self.path[0].copy()
-        self.speed = 90
-        self.facing = pygame.Vector2(1, 0)
-        self.wait_timer = 0.0
-        self.look_cone_deg = 45
-        self.look_range = 280
+# ======================
+# GAME STATE
+# ======================
+score = 0
+multiplier = 1
+suspicion = 0.0
+game_over = False
+current_minigame = None
 
-    def update(self, dt):
-        if self.wait_timer > 0:
-            self.wait_timer -= dt
-            angle = math.sin(pygame.time.get_ticks()*0.002)*0.6
-            self.facing = pygame.Vector2(1, 0).rotate_rad(angle)
-            return
-        target = self.path[self.idx]
-        to = target - self.pos
-        d = to.length()
-        if d < 4:
-            self.idx = (self.idx + 1) % len(self.path)
-            self.wait_timer = random.uniform(0.6, 1.6)
-        else:
-            self.facing = to.normalize()
-            self.pos += self.facing * self.speed * dt
+# ======================
+# HELPERS
+# ======================
+def draw_text(text, x, y, color=WHITE, center=False):
+    surf = font.render(text, True, color)
+    rect = surf.get_rect()
+    rect.center = (x, y) if center else rect.move(x, y).topleft
+    screen.blit(surf, rect)
 
-    def sees(self, player):
-        to_player = player.pos - self.pos
-        dist = to_player.length()
-        if dist > self.look_range: return False
-        if dist == 0: return True
-        dir_dot = self.facing.normalize().dot(to_player.normalize())
-        angle = math.degrees(math.acos(max(-1, min(1, dir_dot))))
-        return angle <= self.look_cone_deg
+def angle_to_vector(angle):
+    rad = math.radians(angle)
+    return pygame.Vector2(math.cos(rad), math.sin(rad))
 
-    def draw(self, s):
-        pygame.draw.circle(s, (200, 80, 80), (int(self.pos.x), int(self.pos.y)), 18)
-        base = self.facing.angle_to(pygame.Vector2(1,0))
-        for a in (-self.look_cone_deg, self.look_cone_deg):
-            ray = pygame.Vector2(1,0).rotate(base + a) * self.look_range
-            pygame.draw.line(s, (160, 60, 60), self.pos, self.pos + ray, 1)
+def boss_can_see_player():
+    to_player = player_pos - boss_pos
+    dist = to_player.length()
+    if dist > look_distance:
+        return False
+    forward = angle_to_vector(boss_angle)
+    return abs(forward.angle_to(to_player)) < look_cone_deg / 2
 
-# --- Minigames ---
+# ======================
+# MINIGAMES
+# ======================
 class ReactionTap:
     def __init__(self):
+        self.wait = random.uniform(0.8, 2.0)
+        self.timer = 0
         self.active = False
-        self.timer = 0.0
-        self.prompt_time = 0
-        self.prompt_on = False
+        self.time_limit = 1.0
         self.done = False
         self.success = False
 
-    def start(self):
-        self.active = True
-        self.timer = 0.0
-        self.prompt_time = random.uniform(0.6, 2.0)
-        self.prompt_on = False
-        self.done = False
-        self.success = False
-
-    def handle_event(self, e):
-        if not self.active or self.done: return
-        if self.prompt_on and e.type == pygame.KEYDOWN and e.key == pygame.K_RETURN:
-            self.done = True
-            self.success = True
-        elif e.type == pygame.KEYDOWN:
-            self.done = True
-            self.success = False
+    def handle_event(self, event):
+        if self.active and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN:
+                self.success = True
+                self.done = True
 
     def update(self, dt):
-        if not self.active or self.done: return
         self.timer += dt
-        if not self.prompt_on and self.timer >= self.prompt_time:
-            self.prompt_on = True
+        if not self.active and self.timer >= self.wait:
+            self.active = True
+            self.timer = 0
+        elif self.active and self.timer > self.time_limit:
+            self.done = True
 
-    def draw(self, s):
-        if not self.active: return
-        msg = "Wacht..." if not self.prompt_on else "DRUK ENTER NU!"
-        text = font.render(msg, True, (240, 240, 240))
-        s.blit(text, (WIDTH//2 - text.get_width()//2, HEIGHT//2))
+    def draw(self):
+        draw_text("REACTION TAP", WIDTH//2, 170, center=True)
+        if self.active:
+            draw_text("PRESS ENTER!", WIDTH//2, 240, GREEN, True)
+            draw_text(f"{self.time_limit - self.timer:.1f}", WIDTH//2, 270, RED, True)
+        else:
+            draw_text("WAIT...", WIDTH//2, 240, WHITE, True)
+
+class SwipePattern:
+    def __init__(self):
+        self.pattern = random.choices(
+            [pygame.K_LEFT, pygame.K_UP, pygame.K_RIGHT, pygame.K_DOWN], k=4
+        )
+        self.index = 0
+        self.timer = 5
+        self.done = False
+        self.success = False
+
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == self.pattern[self.index]:
+                self.index += 1
+                if self.index == len(self.pattern):
+                    self.success = True
+                    self.done = True
+            else:
+                self.done = True
+
+    def update(self, dt):
+        self.timer -= dt
+        if self.timer <= 0:
+            self.done = True
+
+    def draw(self):
+        arrows = {pygame.K_LEFT:"←", pygame.K_UP:"↑", pygame.K_RIGHT:"→", pygame.K_DOWN:"↓"}
+        text = " ".join(arrows[k] for k in self.pattern)
+        draw_text("SWIPE PATTERN", WIDTH//2, 170, center=True)
+        draw_text(text, WIDTH//2, 220, center=True)
+        draw_text(f"Time: {self.timer:.1f}", WIDTH//2, 260, RED, True)
 
 class MathQuick:
     def __init__(self):
-        self.active = False
-        self.done = False
-        self.success = False
-        self.question = ""
-        self.answer = 0
-        self.input_text = ""
-
-    def start(self):
-        a, b = random.randint(1,9), random.randint(1,9)
-        self.question = f"{a} + {b} = ?"
-        self.answer = a+b
-        self.input_text = ""
-        self.active = True
+        self.a = random.randint(1, 9)
+        self.b = random.randint(1, 9)
+        self.answer = self.a + self.b
+        self.input = ""
+        self.timer = 5
         self.done = False
         self.success = False
 
-    def handle_event(self, e):
-        if not self.active or self.done: return
-        if e.type == pygame.KEYDOWN:
-            if e.key == pygame.K_RETURN:
-                try:
-                    if int(self.input_text) == self.answer:
-                        self.success = True
-                    else:
-                        self.success = False
-                except:
-                    self.success = False
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.unicode.isdigit():
+                self.input += event.unicode
+            elif event.key == pygame.K_RETURN:
+                if self.input.isdigit() and int(self.input) == self.answer:
+                    self.success = True
                 self.done = True
-            elif e.key == pygame.K_BACKSPACE:
-                self.input_text = self.input_text[:-1]
-            else:
-                if e.unicode.isdigit():
-                    self.input_text += e.unicode
-
-    def update(self, dt): pass
-
-    def draw(self, s):
-        if not self.active: return
-        q = font.render(self.question, True, (240,240,240))
-        s.blit(q, (WIDTH//2 - q.get_width()//2, HEIGHT//2 - 20))
-        inp = font.render(self.input_text, True, (200,200,200))
-        s.blit(inp, (WIDTH//2 - inp.get_width()//2, HEIGHT//2 + 20))
-
-# --- Game Scene ---
-class GameScene(Scene):
-    def __init__(self, manager):
-        self.mgr = manager
-        self.player = Player(WIDTH//2, HEIGHT//2 + 60)
-        self.boss = Boss([(180, 140), (780, 140), (780, 420), (180, 420)])
-        self.suspicion = 0.0
-        self.score = 0
-        self.combo = 1.0
-        self.current_minigame = None
-        self.warning_flash = 0.0
-
-    def start_random_minigame(self):
-        choice = random.choice([ReactionTap(), MathQuick()])
-        choice.start()
-        self.current_minigame = choice
-
-    def handle_event(self, e):
-        if e.type == pygame.KEYDOWN:
-            if e.key in (pygame.K_SPACE, pygame.K_t):
-                self.player.toggle_phone()
-                if self.player.phone_up:
-                    self.start_random_minigame()
-                else:
-                    self.current_minigame = None
-        if self.current_minigame:
-            self.current_minigame.handle_event(e)
 
     def update(self, dt):
-        self.boss.update(dt)
-        seen = self.boss.sees(self.player)
-        if self.player.phone_up and seen:
-            self.suspicion += 40 * dt
-            self.warning_flash = 0.3
-        elif self.player.phone_up:
-            self.suspicion += 10 * dt
-        else:
-            self.suspicion -= 20 * dt
-        self.suspicion = max(0.0, min(100.0, self.suspicion))
+        self.timer -= dt
+        if self.timer <= 0:
+            self.done = True
 
-        if self.current_minigame and self.player.phone_up:
-            self.current_minigame.update(dt)
-            if self.current_minigame.done:
-                if self.current_minigame.success:
-                    gained = int(50 * self.combo)
-                    self.score += gained
-                    self.combo = min(5.0, self.combo + 0.25)
+    def draw(self):
+        draw_text("MATH QUICK", WIDTH//2, 170, center=True)
+        draw_text(f"{self.a} + {self.b} = ?", WIDTH//2, 220, center=True)
+        draw_text(self.input, WIDTH//2, 250, GREEN, True)
+        draw_text(f"Time: {self.timer:.1f}", WIDTH//2, 280, RED, True)
+
+def random_minigame():
+    return random.choice([ReactionTap, SwipePattern, MathQuick])()
+
+# ======================
+# GAME LOOP
+# ======================
+running = True
+while running:
+    dt = clock.tick(FPS) / 1000
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        if not game_over and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                phone_up = not phone_up
+                if phone_up:
+                    current_minigame = random_minigame()
                 else:
-                    self.combo = 1.0
-                self.current_minigame = None
+                    current_minigame = None
 
-        self.warning_flash = max(0.0, self.warning_flash - dt)
-        if self.suspicion >= 100.0:
-            self.mgr.switch(GameOverScene(self.mgr, self.score))
+        if current_minigame:
+            current_minigame.handle_event(event)
 
-    def draw(self, s):
-        s.fill(BG_COLOR)
-        pygame.draw.rect(s, (50, 50, 70), (80, 100, WIDTH-160, HEIGHT))
-                # continue draw in GameScene
-        pygame.draw.rect(s, (50, 50, 70), (80, 100, WIDTH-160, HEIGHT-160), 4)
-
-        self.player.draw(s)
-        self.boss.draw(s)
-        if self.current_minigame:
-            self.current_minigame.draw(s)
-
-        # UI
-        self._draw_ui(s)
-
-    def _draw_ui(self, s):
-        bar_w, bar_h = 240, 16
-        x, y = 20, 20
-        pygame.draw.rect(s, (80, 80, 80), (x, y, bar_w, bar_h))
-        fill = int(bar_w * (self.suspicion / 100.0))
-        color = (80+int(175*(self.suspicion/100.0)), 140-int(80*(self.suspicion/100.0)), 60)
-        pygame.draw.rect(s, color, (x, y, fill, bar_h))
-
-        s.blit(font.render(f"Score: {self.score}", True, (230,230,230)), (x, y+24))
-        s.blit(font.render(f"Combo: x{self.combo:.2f}", True, (230,230,230)), (x, y+44))
-
-        phone_text = "Telefoon: OMHOOG (gevaar!)" if self.player.phone_up else "Telefoon: OMLAAG (veilig)"
-        s.blit(font.render(phone_text, True, (230,230,230)), (x, y+68))
-
-        if self.warning_flash > 0:
-            alpha = int(120 * self.warning_flash)
-            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            overlay.fill((255, 80, 80, alpha))
-            s.blit(overlay, (0,0))
-
-# --- Menu Scene ---
-class MenuScene(Scene):
-    def __init__(self, manager):
-        self.mgr = manager
-    def handle_event(self, e):
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_RETURN:
-            self.mgr.switch(GameScene(self.mgr))
-    def update(self, dt): pass
-    def draw(self, s):
-        s.fill((20, 24, 32))
-        title = pygame.font.SysFont("arial", 36).render("Stiekem Op Je Telefoon", True, (240,240,240))
-        s.blit(title, (WIDTH//2 - title.get_width()//2, HEIGHT//2 - 60))
-        msg = font.render("Druk ENTER om te starten", True, (200,200,200))
-        s.blit(msg, (WIDTH//2 - msg.get_width()//2, HEIGHT//2))
-
-# --- Game Over Scene ---
-class GameOverScene(Scene):
-    def __init__(self, manager, score):
-        self.mgr = manager
-        self.score = score
-    def handle_event(self, e):
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_RETURN:
-            self.mgr.switch(MenuScene(self.mgr))
-    def update(self, dt): pass
-    def draw(self, s):
-        s.fill((18, 18, 26))
-        t = pygame.font.SysFont("arial", 32).render("Betrapped! Game Over", True, (240,240,240))
-        s.blit(t, (WIDTH//2 - t.get_width()//2, HEIGHT//2 - 60))
-        sc = font.render(f"Score: {self.score}", True, (220,220,220))
-        s.blit(sc, (WIDTH//2 - sc.get_width()//2, HEIGHT//2))
-        msg = font.render("ENTER: Terug naar menu", True, (200,200,200))
-        s.blit(msg, (WIDTH//2 - msg.get_width()//2, HEIGHT//2 + 30))
-
-# --- Main loop ---
-def main():
-    mgr = SceneManager(MenuScene(None))
-    mgr.scene.mgr = mgr
-    running = True
-    while running:
-        dt = clock.tick(60) / 1000.0
-        for e in pygame.event.get():
-            if e.type == pygame.QUIT:
-                running = False
-            else:
-                mgr.scene.handle_event(e)
-        mgr.scene.update(dt)
-        mgr.scene.draw(screen)
+    if game_over:
+        screen.fill(BLACK)
+        draw_text("GAME OVER", WIDTH//2, HEIGHT//2-20, RED, True)
+        draw_text(f"Score: {score}", WIDTH//2, HEIGHT//2+20, True)
         pygame.display.flip()
-    pygame.quit()
+        continue
 
-if __name__ == "__main__":
-    main()
+    # ======================
+    # BOSS
+    # ======================
+    turn_timer -= dt
+    if turn_timer <= 0:
+        boss_angle = random.randint(0, 360)
+        turn_timer = random.uniform(1.5, 3)
+
+    boss_pos += angle_to_vector(boss_angle) * boss_speed * dt
+    boss_pos.x = max(50, min(WIDTH-50, boss_pos.x))
+    boss_pos.y = max(50, min(HEIGHT-50, boss_pos.y))
+
+    # ======================
+    # SUSPICION
+    # ======================
+    seen = boss_can_see_player()
+    if phone_up:
+        suspicion += (70 if seen else 20) * dt
+    else:
+        suspicion -= 40 * dt
+
+    suspicion = max(0, min(100, suspicion))
+    if suspicion >= 100:
+        game_over = True
+
+    # ======================
+    # MINIGAME UPDATE
+    # ======================
+    if current_minigame:
+        current_minigame.update(dt)
+        if current_minigame.done:
+            if current_minigame.success:
+                score += 100 * multiplier
+                multiplier += 1
+            else:
+                suspicion += 20
+                multiplier = 1
+            phone_up = False
+            current_minigame = None
+
+    # ======================
+    # DRAW
+    # ======================
+    screen.fill(BLACK)
+
+    pygame.draw.circle(screen, RED, boss_pos, 25)
+    pygame.draw.circle(screen, BLUE, player_pos, 20)
+
+    pygame.draw.rect(screen, WHITE, (20, 20, 200, 20), 2)
+    pygame.draw.rect(screen, RED, (20, 20, 2*suspicion, 20))
+
+    draw_text(f"Score: {score}", 20, 50)
+    draw_text(f"Multiplier: x{multiplier}", 20, 75)
+
+    if seen and phone_up:
+        draw_text("BAAS KIJKT!", WIDTH//2, 30, RED, True)
+
+    if current_minigame:
+        pygame.draw.rect(screen, (10,10,10), (280,140,340,200))
+        pygame.draw.rect(screen, WHITE, (280,140,340,200), 2)
+        current_minigame.draw()
+
+    pygame.display.flip()
+
+pygame.quit()
+sys.exit()
