@@ -1,6 +1,8 @@
 import os
 import random
 import pygame
+from minigames import create_random_game
+
 
 # -----------------------------
 # Config
@@ -121,6 +123,9 @@ def reset():
         "boss_timer": 0.0,
         "next_check_in": schedule_next_check(LEVELS[lvl_idx]),
         "reaction_timer": 0.0,
+
+        # 📱 phone minigame
+        "phone_game": create_random_game(),
     }
 
 state = reset()
@@ -151,7 +156,16 @@ while running:
     # Update
     if not state["gameover"]:
         if state["phone"]:
-            state["score"] += PHONE_POINTS_PER_SEC * lvl["mult"] * dt
+            result = state["phone_game"].update(dt, pygame.key.get_pressed())
+
+            if result == "WIN":
+                state["score"] += 30 * lvl["mult"]
+                state["phone_game"] = create_random_game()
+
+            elif result == "LOSE":
+                state["caught"] = True
+                state["gameover"] = True
+
 
         # level up
         new_idx = level_for_score(state["score"])
@@ -168,6 +182,7 @@ while running:
             if state["boss_timer"] >= state["next_check_in"]:
                 state["boss_timer"] = 0.0
                 state["boss_state"] = WALKING_IN
+                state["phone_game"] = create_random_game()
                 state["reaction_timer"] = 0.0
                 state["caught"] = False
 
@@ -237,14 +252,12 @@ while running:
 
     pygame.draw.rect(screen, (25, 25, 30), KEYBOARD_RECT, border_radius=10)
 
-    # Phone overlay on laptop screen
-    if state["phone"] and not state["gameover"]:
-        # A "phone game" UI on screen
-        inner = LAPTOP_RECT.inflate(-40, -40)
-        pygame.draw.rect(screen, (20, 20, 25), inner, border_radius=10)
-        pygame.draw.rect(screen, (70, 220, 120), (inner.x + 20, inner.y + 20, inner.w - 40, 18), border_radius=6)
-        pygame.draw.rect(screen, (220, 60, 60), (inner.x + 20, inner.y + 50, inner.w - 40, 18), border_radius=6)
-        pygame.draw.rect(screen, (80, 140, 240), (inner.x + 20, inner.y + 80, inner.w - 40, 18), border_radius=6)
+# Phone minigame on laptop screen
+if state["phone"] and not state["gameover"]:
+    inner = LAPTOP_RECT.inflate(-30, -30)
+    pygame.draw.rect(screen, (20, 20, 25), inner, border_radius=10)
+
+    state["phone_game"].draw(screen, inner)
 
     # UI
     score_i = int(state["score"])
