@@ -30,6 +30,9 @@ STAR_3 = 500
 # Desk overlay tuning (pixel-perfect)
 DESK_Y_OFFSET = 0  # <-- zet bv. +3 of -2 als hij net niet overlapt
 
+# Hands overlay tuning (pixel-perfect)
+HANDS_Y_OFFSET = 6  # <-- iets naar onder (positief = omlaag, negatief = omhoog)
+
 # Difficulty generator per level index (0..14)
 def make_level_params(i: int):
     t = i / (TOTAL_LEVELS - 1)
@@ -167,19 +170,25 @@ big = pygame.font.SysFont(None, 72)
 # -----------------------------
 # Load visuals (ONLY)
 # -----------------------------
-# assets: Background.png, desk.png, boss.png, laptophands.png, laptophands_1.png, laptopnohands.png, phone.png
+# assets: Background.png, desk.png, boss.png, laptopnohands.png, hands1.png, hands2.png, phone.png
 img_background = load_image("Background.png")
 img_desk = load_image("desk.png")
 img_boss = load_image("boss.png")
-img_laptop_hands = load_image("laptophands.png")
+
+# Base laptop ALWAYS
 img_laptop_nohands = load_image("laptopnohands.png")
+
+# Hands overlays (typing frames)
+img_hands_0 = load_image("hands1.png")
+img_hands_1 = load_image("hands2.png")
+
 img_phone = load_image("phone.png")
 
 background_s = scale(img_background, WIDTH, HEIGHT)
 
 # Desk: scale-to-width (aspect ratio), bottom align
 desk_scale = WIDTH / img_desk.get_width()
-desk_h = int(img_desk.get_height() * desk_scale-120)
+desk_h = int(img_desk.get_height() * desk_scale - 120)
 desk_s = pygame.transform.smoothscale(img_desk, (WIDTH, desk_h))
 DESK_POS = (0, HEIGHT - desk_h + DESK_Y_OFFSET)
 
@@ -194,8 +203,10 @@ PHONE_POS = (
     LAPTOP_POS[1] + (LAPTOP_SIZE[1]//2 - PHONE_SIZE[1]//2) + 6
 )
 
-laptop_hands_s = scale(img_laptop_hands, *LAPTOP_SIZE)
+# Scaled sprites
 laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
+hands_0_s = scale(img_hands_0, *LAPTOP_SIZE)
+hands_1_s = scale(img_hands_1, *LAPTOP_SIZE)
 phone_s = scale(img_phone, *PHONE_SIZE)
 
 # Boss sizing
@@ -292,8 +303,8 @@ while running:
         # hands idle anim (only when NOT on phone)
         if not play["phone"]:
             play["hands_anim_t"] += dt
-            if play["hands_anim_t"] >= 0.1:
-                play["hands_anim_t"] -= 0.1
+            if play["hands_anim_t"] >= 0.15:   # <-- typ-snelheid (sec per frame)
+                play["hands_anim_t"] -= 0.15
                 play["hands_anim_frame"] = 1 - play["hands_anim_frame"]
         else:
             play["hands_anim_t"] = 0.0
@@ -397,7 +408,7 @@ while running:
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
 
-        # LAYERS: background -> boss -> desk -> laptop/phone -> UI
+        # LAYERS: background -> boss -> desk -> laptop(base) -> phone/hands -> UI
         screen.blit(background_s, (0, 0))  # 1) background fullscreen
 
         # 2) boss behind desk
@@ -423,18 +434,26 @@ while running:
         # 3) desk overlay (bottom only, scaled-to-width)
         screen.blit(desk_s, DESK_POS)
 
-        # 4) laptop + phone switch
+        # 4) laptop base ALWAYS
+        screen.blit(laptop_nohands_s, LAPTOP_POS)
+
+        # overlay: phone OR typing hands (hands slightly lower)
+        hands_pos = (LAPTOP_POS[0], LAPTOP_POS[1] + HANDS_Y_OFFSET)
+
         if play["phone"]:
-            screen.blit(laptop_nohands_s, LAPTOP_POS)
             screen.blit(phone_s, PHONE_POS)
         else:
-            # hands animation when NOT on phone
-                screen.blit(laptop_hands_s, LAPTOP_POS)
+            if play["hands_anim_frame"] == 0:
+                screen.blit(hands_0_s, hands_pos)
+            else:
+                screen.blit(hands_1_s, hands_pos)
 
         # 5) UI top
-        draw_text(screen, font,
-                  f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
-                  16, 14, (255, 255, 255))
+        draw_text(
+            screen, font,
+            f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
+            16, 14, (255, 255, 255)
+        )
         draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu",
                   16, 44, (235, 235, 245))
 
