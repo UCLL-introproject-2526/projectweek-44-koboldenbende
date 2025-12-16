@@ -2,6 +2,8 @@ import os
 import json
 import random
 import pygame
+from minigames import create_random_game
+
 
 # -----------------------------
 # Config
@@ -227,24 +229,21 @@ phone_s = scale(img_phone, *PHONE_SIZE)
 # -----------------------------
 # Game state
 # -----------------------------
-save = load_save()
+def reset():
+    lvl_idx = 0
+    return {
+        "score": 0.0,
+        "phone": False,
+        "gameover": False,
+        "caught": False,
 
-scene = SCENE_LEVEL_SELECT
-selected_level = 1
-last_run_score = 0
-last_run_level = 1
-last_run_stars = 0
+        "lvl_idx": lvl_idx,
 
-play = {
-    "score": 0.0,
-    "phone": False,       # <- wanneer True: toon laptopnohands + phone
-    "gameover": False,
-    "caught": False,
-    "boss_state": WAIT,
-    "boss_timer": 0.0,
-    "next_check_in": 3.0,
-    "reaction_timer": 0.0,
-}
+        "boss_state": WAIT,
+        "boss_timer": 0.0,
+        "next_check_in": schedule_next_check(LEVELS[lvl_idx]),
+        "reaction_timer": 0.0,
+    }
 
 def start_level(level_num: int):
     global scene, selected_level
@@ -292,21 +291,28 @@ while running:
             if scene == SCENE_PLAY and event.key == pygame.K_SPACE:
                 play["phone"] = False
 
-    # Update play
-    if scene == SCENE_PLAY and not play["gameover"]:
-        params = make_level_params(selected_level - 1)
+    # Update
+    if not state["gameover"]:
+        if state["phone"]:
+            state["score"] += PHONE_POINTS_PER_SEC * lvl["mult"] * dt
 
-        if play["phone"]:
-            play["score"] += PHONE_POINTS_PER_SEC * params["mult"] * dt
+        # level up
+        new_idx = level_for_score(state["score"])
+        if new_idx > state["lvl_idx"]:
+            state["lvl_idx"] = new_idx
+            lvl = LEVELS[state["lvl_idx"]]
+            state["boss_state"] = WAIT
+            state["boss_timer"] = 0.0
+            state["next_check_in"] = schedule_next_check(lvl)
 
-        play["boss_timer"] += dt
+        state["boss_timer"] += dt
 
-        if play["boss_state"] == WAIT:
-            if play["boss_timer"] >= play["next_check_in"]:
-                play["boss_timer"] = 0.0
-                play["boss_state"] = WALKING_IN
-                play["reaction_timer"] = 0.0
-                play["caught"] = False
+        if state["boss_state"] == WAIT:
+            if state["boss_timer"] >= state["next_check_in"]:
+                state["boss_timer"] = 0.0
+                state["boss_state"] = WALKING_IN
+                state["reaction_timer"] = 0.0
+                state["caught"] = False
 
         elif play["boss_state"] == WALKING_IN:
             play["reaction_timer"] += dt
@@ -425,61 +431,40 @@ while running:
         # desk
         screen.blit(desk_s, DESK_POS)
 
-        # === SWITCH VISUALS HERE ===
-        if play["phone"]:
-            # phone mode: laptop zonder handen + telefoon erboven
-            screen.blit(laptop_nohands_s, LAPTOP_POS)
-            screen.blit(phone_s, PHONE_POS)
-        else:
-            # working mode: laptop met handen
-            screen.blit(laptop_hands_s, LAPTOP_POS)
+    # Laptop foreground (drawn)
+    pygame.draw.rect(screen, (35, 35, 40), LAPTOP_RECT, border_radius=10)
+    pygame.draw.rect(screen, (220, 220, 230), LAPTOP_RECT.inflate(-12, -12), border_radius=8)
 
-        # UI top
-        draw_text(screen, font, f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}", 16, 14)
-        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu", 16, 44, (70, 70, 80))
+    pygame.draw.rect(screen, (25, 25, 30), KEYBOARD_RECT, border_radius=10)
 
-        if play["boss_state"] == WALKING_IN:
-            left = max(0.0, params["grace"] - play["reaction_timer"])
-            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (200, 40, 40))
+    # Phone overlay on laptop screen
+    if state["phone"] and not state["gameover"]:
+        # A "phone game" UI on screen
+        inner = LAPTOP_RECT.inflate(-40, -40)
+        pygame.draw.rect(screen, (20, 20, 25), inner, border_radius=10)
+        pygame.draw.rect(screen, (70, 220, 120), (inner.x + 20, inner.y + 20, inner.w - 40, 18), border_radius=6)
+        pygame.draw.rect(screen, (220, 60, 60), (inner.x + 20, inner.y + 50, inner.w - 40, 18), border_radius=6)
+        pygame.draw.rect(screen, (80, 140, 240), (inner.x + 20, inner.y + 80, inner.w - 40, 18), border_radius=6)
 
-        # progress to win
-        pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
-        bar = pygame.Rect(16, 110, 260, 18)
-        pygame.draw.rect(screen, (40, 40, 45), bar, border_radius=8)
-        pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
-        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (80, 80, 90))
+    # UI
+    score_i = int(state["score"])
+    lvl = LEVELS[state["lvl_idx"]]
+    screen.blit(font.render(f'{lvl["name"]} | Punten: {score_i} | x{lvl["mult"]:.2f}', True, (20, 20, 25)), (16, 12))
+    screen.blit(font.render("Houd SPATIE = telefoon | R = restart", True, (70, 70, 80)), (16, 36))
 
-    elif scene == SCENE_COMPLETE:
-        screen.fill((170, 230, 190))
-        draw_text(screen, big, "LEVEL COMPLETE!", 60, 70, (25, 60, 35))
-        draw_text(screen, font, f"Level {last_run_level}  Score: {last_run_score}", 65, 165, (25, 60, 35))
-        draw_star_row(70, 210, last_run_stars, size=34, gap=16)
+    if state["boss_state"] == WALKING_IN and not state["gameover"]:
+        left = max(0.0, lvl["grace"] - state["reaction_timer"])
+        screen.blit(font.render(f"BAAS KOMT BINNEN! Loslaten binnen {left:.2f}s!", True, (200, 40, 40)), (16, 62))
 
-        b1 = pygame.Rect(60, 300, 300, 60)
-        b2 = pygame.Rect(60, 370, 300, 60)
-
-        if button(b1, "Terug naar Levels") and click:
-            scene = SCENE_LEVEL_SELECT
-
-        if last_run_level < TOTAL_LEVELS:
-            can_next = (last_run_level + 1) <= save["unlocked"]
-            if button(b2, "Volgende Level", enabled=can_next) and click and can_next:
-                start_level(last_run_level + 1)
-        else:
-            button(b2, "Laatste level!", enabled=False)
-
-    elif scene == SCENE_GAMEOVER:
-        screen.fill((245, 190, 190))
-        draw_text(screen, big, "GAME OVER", 60, 70, (80, 20, 20))
-        draw_text(screen, font, f"Level {last_run_level}  Score: {last_run_score}", 65, 165, (80, 20, 20))
-
-        b1 = pygame.Rect(60, 300, 300, 60)
-        b2 = pygame.Rect(60, 370, 300, 60)
-
-        if button(b1, "Opnieuw proberen") and click:
-            start_level(last_run_level)
-        if button(b2, "Terug naar Levels") and click:
-            scene = SCENE_LEVEL_SELECT
+    if state["gameover"]:
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 160))
+        screen.blit(overlay, (0, 0))
+        go = big_font.render("GAME OVER", True, (255, 255, 255))
+        screen.blit(go, (WIDTH // 2 - go.get_width() // 2, HEIGHT // 2 - 90))
+        reason = "Je werd betrapt!" if state["caught"] else "Game over!"
+        info = font.render(f"{reason} Score: {score_i} | Druk op R", True, (255, 255, 255))
+        screen.blit(info, (WIDTH // 2 - info.get_width() // 2, HEIGHT // 2 - 20))
 
     pygame.display.flip()
 
