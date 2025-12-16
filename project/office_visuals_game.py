@@ -9,9 +9,8 @@ WIDTH, HEIGHT = 960, 420
 FPS = 60
 
 PHONE_POINTS_PER_SEC = 18
-FLOOR_Y = 330
 
-# Levels (wordt steeds moeilijker)
+# Level difficulty
 LEVEL_UP_SCORE_STEP = 220
 LEVELS = [
     dict(name="Level 1", min_wait=3.0, max_wait=6.0, walk_in=1.00, look=1.25, grace=0.55, mult=1.00),
@@ -34,81 +33,76 @@ def load_image(filename: str) -> pygame.Surface:
         raise FileNotFoundError(f"Asset ontbreekt: {path}")
     return pygame.image.load(path).convert_alpha()
 
-# -----------------------------
-# Helpers
-# -----------------------------
 def schedule_next_check(lvl):
     return random.uniform(lvl["min_wait"], lvl["max_wait"])
 
 def level_for_score(score: float) -> int:
     return min(len(LEVELS) - 1, int(score // LEVEL_UP_SCORE_STEP))
 
-def blit_bottom(screen, img, x, bottom_y):
-    r = img.get_rect()
-    r.x = x
-    r.bottom = bottom_y
-    screen.blit(img, r)
-    return r
-
-def blit_bottom_center(screen, img, center_x, bottom_y):
-    r = img.get_rect()
-    r.centerx = center_x
-    r.bottom = bottom_y
-    screen.blit(img, r)
-    return r
+def scale(img, w, h):
+    # pixel-sharp (geen smoothscale)
+    return pygame.transform.scale(img, (w, h))
 
 # -----------------------------
 # Init
 # -----------------------------
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Office Reaction Game (Your Visuals - Fixed)")
+pygame.display.set_caption("Office Reaction Game (First Person)")
 clock = pygame.time.Clock()
 font = pygame.font.SysFont(None, 26)
 big_font = pygame.font.SysFont(None, 70)
 
-# Load PNGs (exact filenames from your screenshot)
+# Load your assets
 img_desk = load_image("Desk.png")
 img_door = load_image("pixel_door.png")
 img_boss = load_image("boss.png")
-img_boss_chair = load_image("Boss-Chair.png")
 img_plant = load_image("Big-Plant.png")
 img_cabinet = load_image("Big-Filing-Cabinet.png")
 img_printer_big = load_image("Big-Office-Printer.png")
-img_printer_small = load_image("Printer.png")
-
-# IMPORTANT: per-asset scaling (sharp) - NO smoothscale
-door_s = pygame.transform.scale(img_door, (96, 192))
-boss_s = pygame.transform.scale(img_boss, (64, 96))
-
-desk_s = pygame.transform.scale(img_desk, (220, 90))
-boss_chair_s = pygame.transform.scale(img_boss_chair, (64, 64))
-plant_s = pygame.transform.scale(img_plant, (64, 96))
-cabinet_s = pygame.transform.scale(img_cabinet, (80, 120))
-printer_big_s = pygame.transform.scale(img_printer_big, (96, 96))
-printer_small_s = pygame.transform.scale(img_printer_small, (64, 64))
 
 # -----------------------------
-# Layout (logische posities)
+# First-person scene layout
 # -----------------------------
-DOOR_X = 40
-CABINET_X = 150
+# Background "horizon" where wall meets desk
+HORIZON_Y = 170
 
-DESK_X = 300
-PLANT_X = 260
-BOSS_CHAIR_X = 540
+# Door is far away (small)
+DOOR_POS = (45, 40)
+DOOR_SIZE = (90, 170)
 
-PRINTER_SMALL_X = 680
-PRINTER_BIG_X = 760
+# Props in background (medium-small)
+PLANT_POS = (210, 95)
+PLANT_SIZE = (70, 105)
 
-# Player placeholder (blauwe cirkel) bij bureau
-PLAYER_X = DESK_X + 150
-PLAYER_Y = FLOOR_Y - 130
+CABINET_POS = (120, 60)
+CABINET_SIZE = (90, 135)
 
-# Boss movement
-BOSS_OFFSCREEN_X = -80
-BOSS_DOOR_STAND_X = DOOR_X + door_s.get_width() + 10
-BOSS_BOTTOM_Y = FLOOR_Y
+PRINTER_POS = (740, 70)
+PRINTER_SIZE = (140, 150)
+
+# Desk is close to camera (big), at bottom
+DESK_POS = (0, 230)
+DESK_SIZE = (WIDTH, 210)
+
+# Laptop overlay (we draw it ourselves so you don't need a laptop.png)
+LAPTOP_RECT = pygame.Rect(WIDTH//2 - 150, 235, 300, 140)   # screen
+KEYBOARD_RECT = pygame.Rect(WIDTH//2 - 190, 380, 380, 35)  # keyboard
+
+# Boss movement: from door (far) to near center
+BOSS_START = (DOOR_POS[0] + DOOR_SIZE[0]//2, DOOR_POS[1] + DOOR_SIZE[1] - 10)
+BOSS_END = (WIDTH//2, 250)  # comes forward behind laptop
+
+# Boss size grows with distance (first-person effect)
+BOSS_FAR = (28, 42)
+BOSS_NEAR = (120, 180)
+
+# Pre-scale static items
+door_s = scale(img_door, *DOOR_SIZE)
+plant_s = scale(img_plant, *PLANT_SIZE)
+cabinet_s = scale(img_cabinet, *CABINET_SIZE)
+printer_s = scale(img_printer_big, *PRINTER_SIZE)
+desk_s = scale(img_desk, *DESK_SIZE)
 
 # -----------------------------
 # State
@@ -127,8 +121,6 @@ def reset():
         "boss_timer": 0.0,
         "next_check_in": schedule_next_check(LEVELS[lvl_idx]),
         "reaction_timer": 0.0,
-
-        "boss_x": BOSS_OFFSCREEN_X,
     }
 
 state = reset()
@@ -158,11 +150,10 @@ while running:
 
     # Update
     if not state["gameover"]:
-        # Score
         if state["phone"]:
             state["score"] += PHONE_POINTS_PER_SEC * lvl["mult"] * dt
 
-        # Level up
+        # level up
         new_idx = level_for_score(state["score"])
         if new_idx > state["lvl_idx"]:
             state["lvl_idx"] = new_idx
@@ -170,13 +161,10 @@ while running:
             state["boss_state"] = WAIT
             state["boss_timer"] = 0.0
             state["next_check_in"] = schedule_next_check(lvl)
-            state["boss_x"] = BOSS_OFFSCREEN_X
 
-        # Boss logic
         state["boss_timer"] += dt
 
         if state["boss_state"] == WAIT:
-            state["boss_x"] = BOSS_OFFSCREEN_X
             if state["boss_timer"] >= state["next_check_in"]:
                 state["boss_timer"] = 0.0
                 state["boss_state"] = WALKING_IN
@@ -184,9 +172,6 @@ while running:
                 state["caught"] = False
 
         elif state["boss_state"] == WALKING_IN:
-            t = max(0.0, min(1.0, state["boss_timer"] / lvl["walk_in"]))
-            state["boss_x"] = BOSS_OFFSCREEN_X + t * (BOSS_DOOR_STAND_X - BOSS_OFFSCREEN_X)
-
             state["reaction_timer"] += dt
             if state["phone"] and state["reaction_timer"] > lvl["grace"]:
                 state["caught"] = True
@@ -197,9 +182,7 @@ while running:
                 state["boss_state"] = LOOKING
 
         elif state["boss_state"] == LOOKING:
-            state["boss_x"] = BOSS_DOOR_STAND_X
-
-            # als je tijdens kijken phone aanzet -> direct gepakt
+            # While boss is close/looking: if you go phone -> instant caught
             if state["phone"]:
                 state["caught"] = True
                 state["gameover"] = True
@@ -209,32 +192,59 @@ while running:
                 state["boss_timer"] = 0.0
                 state["next_check_in"] = schedule_next_check(lvl)
 
-    # Draw background (simple)
-    screen.fill((214, 214, 220))
-    pygame.draw.rect(screen, (180, 180, 186), (0, FLOOR_Y, WIDTH, HEIGHT - FLOOR_Y))  # floor
-    pygame.draw.rect(screen, (160, 160, 166), (0, FLOOR_Y - 6, WIDTH, 6))            # baseboard
+    # -----------------------------
+    # Draw (first-person)
+    # -----------------------------
+    # wall
+    screen.fill((216, 216, 222))
+    # subtle wall lines
+    for x in range(0, WIDTH, 90):
+        pygame.draw.line(screen, (206, 206, 212), (x, 0), (x, HEIGHT), 1)
 
-    # Draw office items (bottom aligned)
-    blit_bottom(screen, door_s, DOOR_X, FLOOR_Y)
-    blit_bottom(screen, cabinet_s, CABINET_X, FLOOR_Y)
+    # horizon shadow
+    pygame.draw.rect(screen, (200, 200, 206), (0, HORIZON_Y, WIDTH, 8))
 
-    blit_bottom(screen, desk_s, DESK_X, FLOOR_Y)
-    blit_bottom(screen, plant_s, PLANT_X, FLOOR_Y)
-    blit_bottom(screen, boss_chair_s, BOSS_CHAIR_X, FLOOR_Y)
+    # Background objects (far)
+    screen.blit(door_s, DOOR_POS)
+    screen.blit(cabinet_s, CABINET_POS)
+    screen.blit(plant_s, PLANT_POS)
+    screen.blit(printer_s, PRINTER_POS)
 
-    blit_bottom(screen, printer_small_s, PRINTER_SMALL_X, FLOOR_Y)
-    blit_bottom(screen, printer_big_s, PRINTER_BIG_X, FLOOR_Y)
-
-    # Player (placeholder)
-    pygame.draw.circle(screen, (60, 120, 220), (PLAYER_X, PLAYER_Y), 12)
-    pygame.draw.circle(screen, (255, 255, 255), (PLAYER_X, PLAYER_Y), 12, 2)
-    if state["phone"]:
-        pygame.draw.rect(screen, (25, 25, 30), (PLAYER_X + 16, PLAYER_Y + 8, 14, 18), border_radius=3)
-        pygame.draw.rect(screen, (220, 220, 230), (PLAYER_X + 19, PLAYER_Y + 11, 8, 12), border_radius=2)
-
-    # Boss
+    # Boss (behind laptop, walks in)
     if state["boss_state"] in (WALKING_IN, LOOKING):
-        blit_bottom_center(screen, boss_s, int(state["boss_x"]), BOSS_BOTTOM_Y)
+        # progress based on boss_state timer
+        if state["boss_state"] == WALKING_IN:
+            t = max(0.0, min(1.0, state["boss_timer"] / lvl["walk_in"]))
+        else:
+            t = 1.0
+
+        bx = int(BOSS_START[0] + (BOSS_END[0] - BOSS_START[0]) * t)
+        by = int(BOSS_START[1] + (BOSS_END[1] - BOSS_START[1]) * t)
+
+        bw = int(BOSS_FAR[0] + (BOSS_NEAR[0] - BOSS_FAR[0]) * t)
+        bh = int(BOSS_FAR[1] + (BOSS_NEAR[1] - BOSS_FAR[1]) * t)
+
+        boss_scaled = scale(img_boss, bw, bh)
+        boss_rect = boss_scaled.get_rect(center=(bx, by))
+        screen.blit(boss_scaled, boss_rect)
+
+    # Desk foreground (near)
+    screen.blit(desk_s, DESK_POS)
+
+    # Laptop foreground (drawn)
+    pygame.draw.rect(screen, (35, 35, 40), LAPTOP_RECT, border_radius=10)
+    pygame.draw.rect(screen, (220, 220, 230), LAPTOP_RECT.inflate(-12, -12), border_radius=8)
+
+    pygame.draw.rect(screen, (25, 25, 30), KEYBOARD_RECT, border_radius=10)
+
+    # Phone overlay on laptop screen
+    if state["phone"] and not state["gameover"]:
+        # A "phone game" UI on screen
+        inner = LAPTOP_RECT.inflate(-40, -40)
+        pygame.draw.rect(screen, (20, 20, 25), inner, border_radius=10)
+        pygame.draw.rect(screen, (70, 220, 120), (inner.x + 20, inner.y + 20, inner.w - 40, 18), border_radius=6)
+        pygame.draw.rect(screen, (220, 60, 60), (inner.x + 20, inner.y + 50, inner.w - 40, 18), border_radius=6)
+        pygame.draw.rect(screen, (80, 140, 240), (inner.x + 20, inner.y + 80, inner.w - 40, 18), border_radius=6)
 
     # UI
     score_i = int(state["score"])
@@ -244,11 +254,11 @@ while running:
 
     if state["boss_state"] == WALKING_IN and not state["gameover"]:
         left = max(0.0, lvl["grace"] - state["reaction_timer"])
-        screen.blit(font.render(f"BAAS KOMT! Reageer binnen {left:.2f}s!", True, (200, 40, 40)), (16, 62))
+        screen.blit(font.render(f"BAAS KOMT BINNEN! Loslaten binnen {left:.2f}s!", True, (200, 40, 40)), (16, 62))
 
     if state["gameover"]:
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 155))
+        overlay.fill((0, 0, 0, 160))
         screen.blit(overlay, (0, 0))
         go = big_font.render("GAME OVER", True, (255, 255, 255))
         screen.blit(go, (WIDTH // 2 - go.get_width() // 2, HEIGHT // 2 - 90))
