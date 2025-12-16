@@ -10,7 +10,7 @@ WIDTH, HEIGHT = 960, 540
 FPS = 60
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
-SAVE_PATH = os.path.join(os.path.join(os.path.dirname(__file__)), "save.json")
+SAVE_PATH = os.path.join(os.path.dirname(__file__), "save.json")
 
 PHONE_POINTS_PER_SEC = 18
 
@@ -26,6 +26,9 @@ GRID_LEFT = (WIDTH - GRID_COLS * TILE_W) // 2
 STAR_1 = 180
 STAR_2 = 320
 STAR_3 = 500
+
+# Desk overlay tuning (pixel-perfect)
+DESK_Y_OFFSET = 0  # <-- zet bv. +3 of -2 als hij net niet overlapt
 
 # Difficulty generator per level index (0..14)
 def make_level_params(i: int):
@@ -154,7 +157,7 @@ def set_boss_path(play_state):
 # -----------------------------
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Office Game - Laptop Hands Switch")
+pygame.display.set_caption("Office Game - Desk Layer + Hands Anim")
 clock = pygame.time.Clock()
 
 font = pygame.font.SysFont(None, 28)
@@ -164,14 +167,21 @@ big = pygame.font.SysFont(None, 72)
 # -----------------------------
 # Load visuals (ONLY)
 # -----------------------------
-# assets: Background.png, boss.png, laptophands.png, laptopnohands.png, phone.png
+# assets: Background.png, desk.png, boss.png, laptophands.png, laptophands_1.png, laptopnohands.png, phone.png
 img_background = load_image("Background.png")
+img_desk = load_image("desk.png")
 img_boss = load_image("boss.png")
 img_laptop_hands = load_image("laptophands.png")
 img_laptop_nohands = load_image("laptopnohands.png")
 img_phone = load_image("phone.png")
 
 background_s = scale(img_background, WIDTH, HEIGHT)
+
+# Desk: scale-to-width (aspect ratio), bottom align
+desk_scale = WIDTH / img_desk.get_width()
+desk_h = int(img_desk.get_height() * desk_scale-120)
+desk_s = pygame.transform.smoothscale(img_desk, (WIDTH, desk_h))
+DESK_POS = (0, HEIGHT - desk_h + DESK_Y_OFFSET)
 
 # Laptop placement
 LAPTOP_SIZE = (520, 260)
@@ -188,7 +198,7 @@ laptop_hands_s = scale(img_laptop_hands, *LAPTOP_SIZE)
 laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
 phone_s = scale(img_phone, *PHONE_SIZE)
 
-# Boss sizing (groter)
+# Boss sizing
 BOSS_FAR  = (190, 285)
 BOSS_NEAR = (190, 285)
 
@@ -218,6 +228,10 @@ play = {
     "reaction_timer": 0.0,
     "boss_start": (0, 0),
     "boss_end": (0, 0),
+
+    # hands anim (idle)
+    "hands_anim_t": 0.0,
+    "hands_anim_frame": 0,
 }
 
 def start_level(level_num: int):
@@ -234,8 +248,11 @@ def start_level(level_num: int):
     play["reaction_timer"] = 0.0
     play["boss_start"] = (0, 0)
     play["boss_end"] = (0, 0)
-    schedule_next_check(play, params)
 
+    play["hands_anim_t"] = 0.0
+    play["hands_anim_frame"] = 0
+
+    schedule_next_check(play, params)
     scene = SCENE_PLAY
 
 # -----------------------------
@@ -271,6 +288,16 @@ while running:
     # Update play
     if scene == SCENE_PLAY and not play["gameover"]:
         params = make_level_params(selected_level - 1)
+
+        # hands idle anim (only when NOT on phone)
+        if not play["phone"]:
+            play["hands_anim_t"] += dt
+            if play["hands_anim_t"] >= 0.1:
+                play["hands_anim_t"] -= 0.1
+                play["hands_anim_frame"] = 1 - play["hands_anim_frame"]
+        else:
+            play["hands_anim_t"] = 0.0
+            play["hands_anim_frame"] = 0
 
         if play["phone"]:
             play["score"] += PHONE_POINTS_PER_SEC * params["mult"] * dt
@@ -370,10 +397,10 @@ while running:
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
 
-        # Background
-        screen.blit(background_s, (0, 0))
+        # LAYERS: background -> boss -> desk -> laptop/phone -> UI
+        screen.blit(background_s, (0, 0))  # 1) background fullscreen
 
-        # Boss (walks in and grows)
+        # 2) boss behind desk
         if play["boss_state"] in (WALKING_IN, LOOKING):
             if play["boss_state"] == WALKING_IN:
                 t = clamp(play["boss_timer"] / params["walk_in"], 0.0, 1.0)
@@ -393,14 +420,18 @@ while running:
             boss_rect = boss_scaled.get_rect(center=(bx, by))
             screen.blit(boss_scaled, boss_rect)
 
-        # Laptop + phone switch
+        # 3) desk overlay (bottom only, scaled-to-width)
+        screen.blit(desk_s, DESK_POS)
+
+        # 4) laptop + phone switch
         if play["phone"]:
             screen.blit(laptop_nohands_s, LAPTOP_POS)
             screen.blit(phone_s, PHONE_POS)
         else:
-            screen.blit(laptop_hands_s, LAPTOP_POS)
+            # hands animation when NOT on phone
+                screen.blit(laptop_hands_s, LAPTOP_POS)
 
-        # UI top
+        # 5) UI top
         draw_text(screen, font,
                   f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
                   16, 14, (255, 255, 255))
