@@ -10,7 +10,7 @@ WIDTH, HEIGHT = 960, 540
 FPS = 60
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
-SAVE_PATH = os.path.join(os.path.dirname(__file__), "save.json")
+SAVE_PATH = os.path.join(os.path.join(os.path.dirname(__file__)), "save.json")
 
 PHONE_POINTS_PER_SEC = 18
 
@@ -42,6 +42,7 @@ def make_level_params(i: int):
     grace = max(0.18, grace)
     return dict(min_wait=min_wait, max_wait=max_wait, walk_in=walk_in, look=look, grace=grace, mult=mult)
 
+# Boss states
 WAIT, WALKING_IN, LOOKING = "wait", "walking_in", "looking"
 
 # Scenes
@@ -60,7 +61,6 @@ def load_image(filename: str) -> pygame.Surface:
     return pygame.image.load(path).convert_alpha()
 
 def scale(img, w, h):
-    # pixel-sharp
     return pygame.transform.scale(img, (w, h))
 
 def draw_text(surf, font_obj, text, x, y, color=(20, 20, 25)):
@@ -141,6 +141,14 @@ def score_to_stars(score_int: int) -> int:
         return 1
     return 0
 
+def set_boss_path(play_state):
+    """Random links/rechts en eindigt achter de laptop."""
+    from_left = random.choice([True, False])
+    start_x = -80 if from_left else WIDTH + 80
+    end_x = LAPTOP_POS[0] + LAPTOP_SIZE[0] // 2
+    play_state["boss_start"] = (start_x, BOSS_START_Y)
+    play_state["boss_end"] = (end_x, BOSS_END_Y)
+
 # -----------------------------
 # Init pygame
 # -----------------------------
@@ -154,17 +162,15 @@ small = pygame.font.SysFont(None, 22)
 big = pygame.font.SysFont(None, 72)
 
 # -----------------------------
-# Load visuals (ONLY: background, boss, laptop(s), phone)
+# Load visuals (ONLY)
 # -----------------------------
-# Voeg deze asset toe: assets/Background.png
+# assets: Background.png, boss.png, laptophands.png, laptopnohands.png, phone.png
 img_background = load_image("Background.png")
-
 img_boss = load_image("boss.png")
 img_laptop_hands = load_image("laptophands.png")
 img_laptop_nohands = load_image("laptopnohands.png")
 img_phone = load_image("phone.png")
 
-# Pre-scale background (fill entire screen)
 background_s = scale(img_background, WIDTH, HEIGHT)
 
 # Laptop placement
@@ -178,16 +184,17 @@ PHONE_POS = (
     LAPTOP_POS[1] + (LAPTOP_SIZE[1]//2 - PHONE_SIZE[1]//2) + 6
 )
 
-# Pre-scale laptop variants + phone
 laptop_hands_s = scale(img_laptop_hands, *LAPTOP_SIZE)
 laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
 phone_s = scale(img_phone, *PHONE_SIZE)
 
-# Boss comes in (walks in + grows)
-BOSS_START = (int(WIDTH*0.12), int(HEIGHT*0.28))
-BOSS_END   = (int(WIDTH*0.52), int(HEIGHT*0.60))  # behind laptop
-BOSS_FAR   = (28, 42)
-BOSS_NEAR  = (120, 180)
+# Boss sizing (groter)
+BOSS_FAR  = (190, 285)
+BOSS_NEAR = (190, 285)
+
+# Boss y path (achter "desk/laptop")
+BOSS_END_Y = LAPTOP_POS[1] + 12
+BOSS_START_Y = BOSS_END_Y
 
 # -----------------------------
 # Game state
@@ -202,13 +209,15 @@ last_run_stars = 0
 
 play = {
     "score": 0.0,
-    "phone": False,       # True: laptopnohands + phone overlay
+    "phone": False,
     "gameover": False,
     "caught": False,
     "boss_state": WAIT,
     "boss_timer": 0.0,
     "next_check_in": 3.0,
     "reaction_timer": 0.0,
+    "boss_start": (0, 0),
+    "boss_end": (0, 0),
 }
 
 def start_level(level_num: int):
@@ -223,6 +232,8 @@ def start_level(level_num: int):
     play["boss_state"] = WAIT
     play["boss_timer"] = 0.0
     play["reaction_timer"] = 0.0
+    play["boss_start"] = (0, 0)
+    play["boss_end"] = (0, 0)
     schedule_next_check(play, params)
 
     scene = SCENE_PLAY
@@ -272,6 +283,7 @@ while running:
                 play["boss_state"] = WALKING_IN
                 play["reaction_timer"] = 0.0
                 play["caught"] = False
+                set_boss_path(play)
 
         elif play["boss_state"] == WALKING_IN:
             play["reaction_timer"] += dt
@@ -303,7 +315,6 @@ while running:
             if last_run_level < TOTAL_LEVELS:
                 save["unlocked"] = max(save["unlocked"], last_run_level + 1)
             write_save(save)
-
             scene = SCENE_COMPLETE
 
         if play["gameover"]:
@@ -368,10 +379,16 @@ while running:
                 t = clamp(play["boss_timer"] / params["walk_in"], 0.0, 1.0)
             else:
                 t = 1.0
-            bx = int(BOSS_START[0] + (BOSS_END[0] - BOSS_START[0]) * t)
-            by = int(BOSS_START[1] + (BOSS_END[1] - BOSS_START[1]) * t)
+
+            sx, sy = play["boss_start"]
+            ex, ey = play["boss_end"]
+
+            bx = int(sx + (ex - sx) * t)
+            by = int(sy + (ey - sy) * t)
+
             bw = int(BOSS_FAR[0] + (BOSS_NEAR[0] - BOSS_FAR[0]) * t)
             bh = int(BOSS_FAR[1] + (BOSS_NEAR[1] - BOSS_FAR[1]) * t)
+
             boss_scaled = scale(img_boss, bw, bh)
             boss_rect = boss_scaled.get_rect(center=(bx, by))
             screen.blit(boss_scaled, boss_rect)
@@ -383,9 +400,12 @@ while running:
         else:
             screen.blit(laptop_hands_s, LAPTOP_POS)
 
-        # UI top (nog steeds hetzelfde)
-        draw_text(screen, font, f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}", 16, 14, (255, 255, 255))
-        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu", 16, 44, (235, 235, 245))
+        # UI top
+        draw_text(screen, font,
+                  f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
+                  16, 14, (255, 255, 255))
+        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu",
+                  16, 44, (235, 235, 245))
 
         if play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - play["reaction_timer"])
