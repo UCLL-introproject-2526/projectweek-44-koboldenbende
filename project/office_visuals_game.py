@@ -449,24 +449,22 @@ while running:
                 screen.blit(hands_1_s, hands_pos)
 
         # 5) UI top
-        draw_text(
-            screen, font,
-            f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
-            16, 14, (255, 255, 255)
-        )
+        draw_text(screen, font,
+                  f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
+                  16, 14, (255, 255, 255))
         draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu",
-                  16, 44, (235, 235, 245))
+                  16, 44, (0, 0, 0))
 
         if play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - play["reaction_timer"])
-            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (255, 90, 90))
+            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (204, 0, 0))
 
         # progress to win
         pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
         bar = pygame.Rect(16, 110, 260, 18)
         pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
         pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
-        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (240, 240, 245))
+        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (0, 0, 0))
 
     elif scene == SCENE_COMPLETE:
         screen.fill((170, 230, 190))
