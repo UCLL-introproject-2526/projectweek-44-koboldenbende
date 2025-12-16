@@ -154,75 +154,40 @@ small = pygame.font.SysFont(None, 22)
 big = pygame.font.SysFont(None, 72)
 
 # -----------------------------
-# Load visuals (OFFICE)
+# Load visuals (ONLY: background, boss, laptop(s), phone)
 # -----------------------------
-img_desk = load_image("Desk.png")
-img_door = load_image("pixel_door.png")
-img_boss = load_image("boss.png")
-img_chair = load_image("Boss-Chair.png")
-img_plant = load_image("Big-Plant.png")
-img_cabinet = load_image("Big-Filing-Cabinet.png")
-img_printer_big = load_image("Big-Office-Printer.png")
-img_printer_small = load_image("Printer.png")
+# Voeg deze asset toe: assets/Background.png
+img_background = load_image("Background.png")
 
-# NEW: laptop+hands, laptop zonder handen, telefoon overlay
+img_boss = load_image("boss.png")
 img_laptop_hands = load_image("laptophands.png")
 img_laptop_nohands = load_image("laptopnohands.png")
 img_phone = load_image("phone.png")
 
-# -----------------------------
-# First-person scene layout
-# -----------------------------
-HORIZON_Y = 190
-
-DOOR_POS = (55, 50)
-DOOR_SIZE = (100, 190)
-
-CABINET_POS = (150, 85)
-CABINET_SIZE = (95, 145)
-
-PLANT_POS = (220, 120)
-PLANT_SIZE = (75, 115)
-
-PRINTER_BIG_POS = (740, 90)
-PRINTER_BIG_SIZE = (150, 160)
-
-PRINTER_SMALL_POS = (660, 160)
-PRINTER_SMALL_SIZE = (90, 90)
-
-CHAIR_POS = (540, 205)
-CHAIR_SIZE = (80, 80)
-
-DESK_POS = (0, 330)
-DESK_SIZE = (WIDTH, 230)
+# Pre-scale background (fill entire screen)
+background_s = scale(img_background, WIDTH, HEIGHT)
 
 # Laptop placement
-LAPTOP_POS = (WIDTH//2 - 260, 285)
 LAPTOP_SIZE = (520, 260)
+LAPTOP_POS = (WIDTH//2 - LAPTOP_SIZE[0]//2, HEIGHT - LAPTOP_SIZE[1] - 22)
 
 # Phone placement (centered on laptop area)
 PHONE_SIZE = (300, 300)
-PHONE_POS = (WIDTH//2 - PHONE_SIZE[0]//2, 285 + 10)
-
-# Boss comes in
-BOSS_START = (DOOR_POS[0] + DOOR_SIZE[0]//2, DOOR_POS[1] + DOOR_SIZE[1] - 10)
-BOSS_END = (WIDTH//2, 330)  # behind laptop
-BOSS_FAR = (28, 42)
-BOSS_NEAR = (120, 180)
-
-# Pre-scale static items
-desk_s = scale(img_desk, *DESK_SIZE)
-door_s = scale(img_door, *DOOR_SIZE)
-plant_s = scale(img_plant, *PLANT_SIZE)
-cabinet_s = scale(img_cabinet, *CABINET_SIZE)
-printer_big_s = scale(img_printer_big, *PRINTER_BIG_SIZE)
-printer_small_s = scale(img_printer_small, *PRINTER_SMALL_SIZE)
-chair_s = scale(img_chair, *CHAIR_SIZE)
+PHONE_POS = (
+    WIDTH//2 - PHONE_SIZE[0]//2,
+    LAPTOP_POS[1] + (LAPTOP_SIZE[1]//2 - PHONE_SIZE[1]//2) + 6
+)
 
 # Pre-scale laptop variants + phone
 laptop_hands_s = scale(img_laptop_hands, *LAPTOP_SIZE)
 laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
 phone_s = scale(img_phone, *PHONE_SIZE)
+
+# Boss comes in (walks in + grows)
+BOSS_START = (int(WIDTH*0.12), int(HEIGHT*0.28))
+BOSS_END   = (int(WIDTH*0.52), int(HEIGHT*0.60))  # behind laptop
+BOSS_FAR   = (28, 42)
+BOSS_NEAR  = (120, 180)
 
 # -----------------------------
 # Game state
@@ -237,7 +202,7 @@ last_run_stars = 0
 
 play = {
     "score": 0.0,
-    "phone": False,       # <- wanneer True: toon laptopnohands + phone
+    "phone": False,       # True: laptopnohands + phone overlay
     "gameover": False,
     "caught": False,
     "boss_state": WAIT,
@@ -394,21 +359,10 @@ while running:
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
 
-        # wall
-        screen.fill((216, 216, 222))
-        for x in range(0, WIDTH, 90):
-            pygame.draw.line(screen, (206, 206, 212), (x, 0), (x, HEIGHT), 1)
-        pygame.draw.rect(screen, (200, 200, 206), (0, HORIZON_Y, WIDTH, 8))
+        # Background
+        screen.blit(background_s, (0, 0))
 
-        # background props
-        screen.blit(door_s, DOOR_POS)
-        screen.blit(cabinet_s, CABINET_POS)
-        screen.blit(plant_s, PLANT_POS)
-        screen.blit(printer_big_s, PRINTER_BIG_POS)
-        screen.blit(printer_small_s, PRINTER_SMALL_POS)
-        screen.blit(chair_s, CHAIR_POS)
-
-        # boss (walks in and grows)
+        # Boss (walks in and grows)
         if play["boss_state"] in (WALKING_IN, LOOKING):
             if play["boss_state"] == WALKING_IN:
                 t = clamp(play["boss_timer"] / params["walk_in"], 0.0, 1.0)
@@ -422,32 +376,27 @@ while running:
             boss_rect = boss_scaled.get_rect(center=(bx, by))
             screen.blit(boss_scaled, boss_rect)
 
-        # desk
-        screen.blit(desk_s, DESK_POS)
-
-        # === SWITCH VISUALS HERE ===
+        # Laptop + phone switch
         if play["phone"]:
-            # phone mode: laptop zonder handen + telefoon erboven
             screen.blit(laptop_nohands_s, LAPTOP_POS)
             screen.blit(phone_s, PHONE_POS)
         else:
-            # working mode: laptop met handen
             screen.blit(laptop_hands_s, LAPTOP_POS)
 
-        # UI top
-        draw_text(screen, font, f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}", 16, 14)
-        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu", 16, 44, (70, 70, 80))
+        # UI top (nog steeds hetzelfde)
+        draw_text(screen, font, f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}", 16, 14, (255, 255, 255))
+        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu", 16, 44, (235, 235, 245))
 
         if play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - play["reaction_timer"])
-            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (200, 40, 40))
+            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (255, 90, 90))
 
         # progress to win
         pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
         bar = pygame.Rect(16, 110, 260, 18)
-        pygame.draw.rect(screen, (40, 40, 45), bar, border_radius=8)
+        pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
         pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
-        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (80, 80, 90))
+        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (240, 240, 245))
 
     elif scene == SCENE_COMPLETE:
         screen.fill((170, 230, 190))
