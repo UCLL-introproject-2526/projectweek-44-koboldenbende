@@ -4,7 +4,7 @@ import random
 import pygame
 
 # -----------------------------
-# Config
+# CONFIGURATION / SETTINGS
 # -----------------------------
 WIDTH, HEIGHT = 960, 540
 FPS = 60
@@ -12,30 +12,32 @@ FPS = 60
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 SAVE_PATH = os.path.join(os.path.join(os.path.dirname(__file__)), "save.json")
 
+# Phone score per second when using the laptop phone
 PHONE_POINTS_PER_SEC = 18
 
-# Level select layout
+# Level selection grid
 GRID_COLS = 5
 GRID_ROWS = 3
-TOTAL_LEVELS = GRID_COLS * GRID_ROWS  # 15
+TOTAL_LEVELS = GRID_COLS * GRID_ROWS  # total 15 levels
 TILE_W, TILE_H = 140, 110
 GRID_TOP = 140
 GRID_LEFT = (WIDTH - GRID_COLS * TILE_W) // 2
 
-# Stars thresholds (punten nodig in 1 run)
+# Star thresholds: points needed for 1, 2, 3 stars
 STAR_1 = 180
 STAR_2 = 320
 STAR_3 = 500
 
-# Difficulty generator per level index (0..14)
+# Difficulty curve: easier at start, harder at later levels
 def make_level_params(i: int):
     t = i / (TOTAL_LEVELS - 1)
-    min_wait = 3.2 - 1.6 * t
+    min_wait = 3.2 - 1.6 * t       # time boss waits before moving
     max_wait = 6.2 - 2.2 * t
-    walk_in = 1.05 - 0.35 * t
-    look = 1.20 + 0.70 * t
-    grace = 0.60 - 0.35 * t
-    mult = 1.00 + 0.30 * t
+    walk_in = 1.05 - 0.35 * t      # time boss walks in
+    look = 1.20 + 0.70 * t         # boss looks at you
+    grace = 0.60 - 0.35 * t        # reaction time allowed
+    mult = 1.00 + 0.30 * t         # point multiplier
+    # clamp values to avoid negative / too small
     min_wait = max(1.0, min_wait)
     max_wait = max(min_wait + 0.5, max_wait)
     walk_in = max(0.55, walk_in)
@@ -45,31 +47,36 @@ def make_level_params(i: int):
 # Boss states
 WAIT, WALKING_IN, LOOKING = "wait", "walking_in", "looking"
 
-# Scenes
+# Game scenes
 SCENE_LEVEL_SELECT = "level_select"
 SCENE_PLAY = "play"
 SCENE_COMPLETE = "complete"
 SCENE_GAMEOVER = "gameover"
 
 # -----------------------------
-# Utils
+# HELPER FUNCTIONS
 # -----------------------------
 def load_image(filename: str) -> pygame.Surface:
+    """Load image from assets folder, raise error if missing."""
     path = os.path.join(ASSETS_DIR, filename)
     if not os.path.exists(path):
-        raise FileNotFoundError(f"Asset ontbreekt: {path}")
+        raise FileNotFoundError(f"Missing asset: {path}")
     return pygame.image.load(path).convert_alpha()
 
 def scale(img, w, h):
+    # pixel-sharp
     return pygame.transform.scale(img, (w, h))
 
 def draw_text(surf, font_obj, text, x, y, color=(20, 20, 25)):
+    """Draw text to a surface at (x,y)."""
     surf.blit(font_obj.render(text, True, color), (x, y))
 
 def clamp(v, a, b):
+    """Clamp value between a and b."""
     return max(a, min(b, v))
 
 def load_save():
+    """Load player progress, create new save if missing or corrupted."""
     if not os.path.exists(SAVE_PATH):
         return {"unlocked": 1, "stars": [0]*TOTAL_LEVELS}
     try:
@@ -85,20 +92,20 @@ def load_save():
         return {"unlocked": 1, "stars": [0]*TOTAL_LEVELS}
 
 def write_save(data):
+    """Write player progress to JSON file."""
     try:
         with open(SAVE_PATH, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
     except Exception:
         pass
 
-# -----------------------------
-# UI helpers
-# -----------------------------
+# Draw 3-star UI row
 def draw_star_row(x, y, n, size=18, gap=8):
     for i in range(3):
         cx = x + i*(size+gap) + size//2
         cy = y + size//2
         color = (240, 200, 60) if i < n else (170, 170, 180)
+        # simple star polygon
         pts = [
             (cx, cy - size//2),
             (cx + size*0.18, cy - size*0.15),
@@ -115,6 +122,7 @@ def draw_star_row(x, y, n, size=18, gap=8):
         pygame.draw.polygon(screen, (110, 110, 120), pts, 2)
 
 def button(rect, text, enabled=True):
+    """Draw a button and return True if hovered+clicked."""
     mx, my = pygame.mouse.get_pos()
     hover = rect.collidepoint(mx, my)
     base = (245, 210, 120) if enabled else (190, 190, 195)
@@ -126,19 +134,15 @@ def button(rect, text, enabled=True):
     screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
     return hover and enabled
 
-# -----------------------------
-# Game helpers
-# -----------------------------
 def schedule_next_check(play_state, params):
+    """Set next boss event time."""
     play_state["next_check_in"] = random.uniform(params["min_wait"], params["max_wait"])
 
 def score_to_stars(score_int: int) -> int:
-    if score_int >= STAR_3:
-        return 3
-    if score_int >= STAR_2:
-        return 2
-    if score_int >= STAR_1:
-        return 1
+    """Convert score to 0-3 stars."""
+    if score_int >= STAR_3: return 3
+    if score_int >= STAR_2: return 2
+    if score_int >= STAR_1: return 1
     return 0
 
 def set_boss_path(play_state):
@@ -150,11 +154,11 @@ def set_boss_path(play_state):
     play_state["boss_end"] = (end_x, BOSS_END_Y)
 
 # -----------------------------
-# Init pygame
+# PYGAME INIT
 # -----------------------------
 pygame.init()
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Office Game - Laptop Hands Switch")
+pygame.display.set_caption("Office Game - Laptop/Phone Switch")
 clock = pygame.time.Clock()
 
 font = pygame.font.SysFont(None, 28)
@@ -162,9 +166,9 @@ small = pygame.font.SysFont(None, 22)
 big = pygame.font.SysFont(None, 72)
 
 # -----------------------------
-# Load visuals (ONLY)
+# Load visuals (ONLY: background, boss, laptop(s), phone)
 # -----------------------------
-# assets: Background.png, boss.png, laptophands.png, laptopnohands.png, phone.png
+# Voeg deze asset toe: assets/Background.png
 img_background = load_image("Background.png")
 img_boss = load_image("boss.png")
 img_laptop_hands = load_image("laptophands.png")
@@ -173,34 +177,27 @@ img_phone = load_image("phone.png")
 
 background_s = scale(img_background, WIDTH, HEIGHT)
 
-# Laptop placement
 LAPTOP_SIZE = (520, 260)
 LAPTOP_POS = (WIDTH//2 - LAPTOP_SIZE[0]//2, HEIGHT - LAPTOP_SIZE[1] - 22)
 
-# Phone placement (centered on laptop area)
 PHONE_SIZE = (300, 300)
-PHONE_POS = (
-    WIDTH//2 - PHONE_SIZE[0]//2,
-    LAPTOP_POS[1] + (LAPTOP_SIZE[1]//2 - PHONE_SIZE[1]//2) + 6
-)
+PHONE_POS = (WIDTH//2 - PHONE_SIZE[0]//2,
+             LAPTOP_POS[1] + (LAPTOP_SIZE[1]//2 - PHONE_SIZE[1]//2) + 6)
 
 laptop_hands_s = scale(img_laptop_hands, *LAPTOP_SIZE)
 laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
 phone_s = scale(img_phone, *PHONE_SIZE)
 
-# Boss sizing (groter)
-BOSS_FAR  = (190, 285)
-BOSS_NEAR = (190, 285)
-
-# Boss y path (achter "desk/laptop")
-BOSS_END_Y = LAPTOP_POS[1] + 12
-BOSS_START_Y = BOSS_END_Y
+# Boss comes in (walks in + grows)
+BOSS_START = (int(WIDTH*0.12), int(HEIGHT*0.28))
+BOSS_END   = (int(WIDTH*0.52), int(HEIGHT*0.60))  # behind laptop
+BOSS_FAR   = (28, 42)
+BOSS_NEAR  = (120, 180)
 
 # -----------------------------
-# Game state
+# GAME STATE
 # -----------------------------
 save = load_save()
-
 scene = SCENE_LEVEL_SELECT
 selected_level = 1
 last_run_score = 0
@@ -209,7 +206,7 @@ last_run_stars = 0
 
 play = {
     "score": 0.0,
-    "phone": False,
+    "phone": False,       # True: laptopnohands + phone overlay
     "gameover": False,
     "caught": False,
     "boss_state": WAIT,
@@ -221,6 +218,7 @@ play = {
 }
 
 def start_level(level_num: int):
+    """Initialize a level run."""
     global scene, selected_level
     selected_level = level_num
     params = make_level_params(level_num - 1)
@@ -239,13 +237,14 @@ def start_level(level_num: int):
     scene = SCENE_PLAY
 
 # -----------------------------
-# Main loop
+# MAIN LOOP
 # -----------------------------
 running = True
 while running:
     dt = clock.tick(FPS) / 1000.0
-
     click = False
+
+    # ----- INPUT HANDLING -----
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -256,11 +255,8 @@ while running:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE and scene == SCENE_PLAY:
                 scene = SCENE_LEVEL_SELECT
-
-            if scene == SCENE_PLAY:
-                if event.key == pygame.K_SPACE and not play["gameover"]:
-                    play["phone"] = True
-
+            if scene == SCENE_PLAY and event.key == pygame.K_SPACE:
+                play["phone"] = True
             if event.key == pygame.K_r and scene in (SCENE_GAMEOVER, SCENE_COMPLETE):
                 scene = SCENE_LEVEL_SELECT
 
@@ -268,13 +264,14 @@ while running:
             if scene == SCENE_PLAY and event.key == pygame.K_SPACE:
                 play["phone"] = False
 
-    # Update play
+    # ----- UPDATE -----
     if scene == SCENE_PLAY and not play["gameover"]:
         params = make_level_params(selected_level - 1)
 
         if play["phone"]:
             play["score"] += PHONE_POINTS_PER_SEC * params["mult"] * dt
 
+        # Boss logic
         play["boss_timer"] += dt
 
         if play["boss_state"] == WAIT:
@@ -283,23 +280,19 @@ while running:
                 play["boss_state"] = WALKING_IN
                 play["reaction_timer"] = 0.0
                 play["caught"] = False
-                set_boss_path(play)
 
         elif play["boss_state"] == WALKING_IN:
             play["reaction_timer"] += dt
             if play["phone"] and play["reaction_timer"] > params["grace"]:
                 play["caught"] = True
                 play["gameover"] = True
-
             if play["boss_timer"] >= params["walk_in"]:
                 play["boss_timer"] = 0.0
                 play["boss_state"] = LOOKING
-
         elif play["boss_state"] == LOOKING:
             if play["phone"]:
                 play["caught"] = True
                 play["gameover"] = True
-
             if play["boss_timer"] >= params["look"]:
                 play["boss_state"] = WAIT
                 play["boss_timer"] = 0.0
@@ -310,7 +303,6 @@ while running:
             last_run_score = int(play["score"])
             last_run_level = selected_level
             last_run_stars = score_to_stars(last_run_score)
-
             save["stars"][last_run_level - 1] = max(save["stars"][last_run_level - 1], last_run_stars)
             if last_run_level < TOTAL_LEVELS:
                 save["unlocked"] = max(save["unlocked"], last_run_level + 1)
@@ -323,18 +315,16 @@ while running:
             last_run_stars = score_to_stars(last_run_score)
             scene = SCENE_GAMEOVER
 
-    # -----------------------------
-    # DRAW
-    # -----------------------------
+    # ----- DRAW -----
     screen.fill((210, 225, 245))
 
     if scene == SCENE_LEVEL_SELECT:
         pygame.draw.rect(screen, (170, 210, 240), (0, 0, WIDTH, 160))
         pygame.draw.rect(screen, (120, 180, 230), (0, 160, WIDTH, HEIGHT-160))
-
         draw_text(screen, big, "LEVELS", 40, 30, (255, 255, 255))
         draw_text(screen, font, f"Unlocked: {save['unlocked']} / {TOTAL_LEVELS}", 42, 95, (255, 255, 255))
 
+        # Draw all level tiles
         for r in range(GRID_ROWS):
             for c in range(GRID_COLS):
                 idx = r*GRID_COLS + c
@@ -342,7 +332,6 @@ while running:
                 x = GRID_LEFT + c*TILE_W
                 y = GRID_TOP + r*TILE_H
                 rect = pygame.Rect(x+10, y+10, TILE_W-20, TILE_H-20)
-
                 unlocked = lvl_num <= save["unlocked"]
                 mx, my = pygame.mouse.get_pos()
                 hover = rect.collidepoint(mx, my)
@@ -351,12 +340,9 @@ while running:
                     fill = (245, 230, 160) if hover else (240, 220, 140)
                     pygame.draw.rect(screen, fill, rect, border_radius=16)
                     pygame.draw.rect(screen, (150, 120, 70), rect, 3, border_radius=16)
-
                     t = font.render(str(lvl_num), True, (55, 45, 35))
                     screen.blit(t, (rect.x + 12, rect.y + 10))
-
                     draw_star_row(rect.x + 18, rect.y + 52, save["stars"][idx], size=18, gap=6)
-
                     if click and hover:
                         start_level(lvl_num)
                 else:
@@ -369,50 +355,39 @@ while running:
 
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
-
-        # Background
         screen.blit(background_s, (0, 0))
 
-        # Boss (walks in and grows)
+        # Boss draw
         if play["boss_state"] in (WALKING_IN, LOOKING):
             if play["boss_state"] == WALKING_IN:
                 t = clamp(play["boss_timer"] / params["walk_in"], 0.0, 1.0)
             else:
                 t = 1.0
-
-            sx, sy = play["boss_start"]
-            ex, ey = play["boss_end"]
-
-            bx = int(sx + (ex - sx) * t)
-            by = int(sy + (ey - sy) * t)
-
+            bx = int(BOSS_START[0] + (BOSS_END[0] - BOSS_START[0]) * t)
+            by = int(BOSS_START[1] + (BOSS_END[1] - BOSS_START[1]) * t)
             bw = int(BOSS_FAR[0] + (BOSS_NEAR[0] - BOSS_FAR[0]) * t)
             bh = int(BOSS_FAR[1] + (BOSS_NEAR[1] - BOSS_FAR[1]) * t)
-
             boss_scaled = scale(img_boss, bw, bh)
             boss_rect = boss_scaled.get_rect(center=(bx, by))
             screen.blit(boss_scaled, boss_rect)
 
-        # Laptop + phone switch
+        # Laptop + phone overlay
         if play["phone"]:
             screen.blit(laptop_nohands_s, LAPTOP_POS)
             screen.blit(phone_s, PHONE_POS)
         else:
             screen.blit(laptop_hands_s, LAPTOP_POS)
 
-        # UI top
-        draw_text(screen, font,
-                  f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
-                  16, 14, (255, 255, 255))
-        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu",
-                  16, 44, (235, 235, 245))
+        # UI top (nog steeds hetzelfde)
+        draw_text(screen, font, f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}", 16, 14, (255, 255, 255))
+        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu", 16, 44, (235, 235, 245))
 
         if play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - play["reaction_timer"])
             draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (255, 90, 90))
 
-        # progress to win
-        pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
+        # Progress bar to finish
+        pct = clamp(play["score"]/STAR_3, 0.0, 1.0)
         bar = pygame.Rect(16, 110, 260, 18)
         pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
         pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
@@ -423,28 +398,22 @@ while running:
         draw_text(screen, big, "LEVEL COMPLETE!", 60, 70, (25, 60, 35))
         draw_text(screen, font, f"Level {last_run_level}  Score: {last_run_score}", 65, 165, (25, 60, 35))
         draw_star_row(70, 210, last_run_stars, size=34, gap=16)
-
         b1 = pygame.Rect(60, 300, 300, 60)
         b2 = pygame.Rect(60, 370, 300, 60)
-
         if button(b1, "Terug naar Levels") and click:
             scene = SCENE_LEVEL_SELECT
-
-        if last_run_level < TOTAL_LEVELS:
-            can_next = (last_run_level + 1) <= save["unlocked"]
-            if button(b2, "Volgende Level", enabled=can_next) and click and can_next:
-                start_level(last_run_level + 1)
-        else:
+        can_next = (last_run_level + 1) <= save["unlocked"]
+        if button(b2, "Volgende Level", enabled=can_next) and click and can_next:
+            start_level(last_run_level + 1)
+        elif last_run_level >= TOTAL_LEVELS:
             button(b2, "Laatste level!", enabled=False)
 
     elif scene == SCENE_GAMEOVER:
         screen.fill((245, 190, 190))
         draw_text(screen, big, "GAME OVER", 60, 70, (80, 20, 20))
         draw_text(screen, font, f"Level {last_run_level}  Score: {last_run_score}", 65, 165, (80, 20, 20))
-
         b1 = pygame.Rect(60, 300, 300, 60)
         b2 = pygame.Rect(60, 370, 300, 60)
-
         if button(b1, "Opnieuw proberen") and click:
             start_level(last_run_level)
         if button(b2, "Terug naar Levels") and click:
