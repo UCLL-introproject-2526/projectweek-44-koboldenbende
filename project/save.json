@@ -1,5 +1,5 @@
 {
-  "unlocked": 3,
+  "unlocked": 4,
   "stars": [
     3,
     3,
@@ -17,7 +17,7 @@
     0,
     0
   ],
-  "coins": 240,
+  "coins": 330,
   "owned": {
     "laptop_default": true,
     "laptop_red": true,
