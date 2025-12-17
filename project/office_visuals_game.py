@@ -3,9 +3,7 @@ import json
 import random
 import pygame
 
-# -----------------------------
 # Config
-# -----------------------------
 FPS = 60
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
@@ -30,9 +28,7 @@ DESK_Y_OFFSET = 0
 # Hands overlay tuning
 HANDS_Y_OFFSET = 6
 
-# -----------------------------
 # Coins rewards
-# -----------------------------
 COINS_BASE_WIN = 50
 COINS_PER_STAR = 10
 COINS_FIRST_CLEAR_BONUS = 100
@@ -40,17 +36,13 @@ COINS_FIRST_CLEAR_BONUS = 100
 # Popup
 POPUP_DURATION = 1.4  # sec
 
-# -----------------------------
 # Main menu settings
-# -----------------------------
 MAIN_MENU_BG_COLOR = (45, 55, 70)      # fallback
 BUTTON_BG_COLOR = (109, 52, 18)        # donker bruin
 BUTTON_TEXT_COLOR = (253, 221, 131)    # licht goud
 TITLE_COLOR = (255, 230, 180)
 
-# -----------------------------
 # Shop colors
-# -----------------------------
 COL_TEXT = (109, 52, 18)           # text
 COL_BTN_BG = (253, 221, 131)       # knop background
 COL_PANEL_BG = (248, 236, 200)
@@ -58,9 +50,7 @@ COL_CARD_BG  = (255, 248, 225)
 COL_BORDER   = (109, 52, 18)
 COL_MUTED    = (170, 150, 120)
 
-# -----------------------------
 # Shop catalog (ALLEEN laptops)
-# -----------------------------
 SHOP_ITEMS = {
     "laptop_default": {"type": "laptop", "price": 0,   "file": "laptopnohands.png", "name": "Laptop Default"},
     "laptop_gaming":  {"type": "laptop", "price": 150, "file": "gaminglaptop.png",  "name": "Gaming Laptop"},
@@ -68,9 +58,7 @@ SHOP_ITEMS = {
     "future_gaming":  {"type": "laptop", "price": 300, "file": "futurlaptop.png",   "name": "Future Laptop"},
 }
 
-# -----------------------------
 # Difficulty generator
-# -----------------------------
 def make_level_params(i: int):
     lvl = i + 1
 
@@ -102,9 +90,7 @@ SCENE_COMPLETE     = "complete"
 SCENE_GAMEOVER     = "gameover"
 SCENE_SHOP         = "shop"
 
-# -----------------------------
 # Utils
-# -----------------------------
 def load_image(filename: str) -> pygame.Surface:
     path = os.path.join(ASSETS_DIR, filename)
     if not os.path.exists(path):
@@ -133,9 +119,7 @@ def blit_fit_center(surf, img, rect, padding=8):
     dst = scaled.get_rect(center=rect.center)
     surf.blit(scaled, dst)
 
-# -----------------------------
 # Save (coins + laptop shop)
-# -----------------------------
 DEFAULT_SAVE = {
     "unlocked": 1,
     "stars": [0]*TOTAL_LEVELS,
@@ -191,9 +175,7 @@ def write_save(data):
     except Exception:
         pass
 
-# -----------------------------
 # Init pygame + dynamic fullscreen resolution
-# -----------------------------
 pygame.init()
 pygame.mixer.init()
 
@@ -215,9 +197,7 @@ def setup_fonts():
 
 setup_fonts()
 
-# -----------------------------
 # Load visuals (raw)
-# -----------------------------
 img_background = load_image("Background.png")
 img_desk = load_image("desk.png")
 
@@ -242,9 +222,7 @@ try:
 except Exception:
     HAS_CAUGHT_BG = False
 
-# -----------------------------
 # Globals die door layout bepaald worden
-# -----------------------------
 background_s = None
 main_menu_bg = None
 caught_bg = None
@@ -359,9 +337,7 @@ def build_shop_thumbs():
 recalc_layout()
 build_shop_thumbs()
 
-# -----------------------------
 # Load audio
-# -----------------------------
 def safe_sound(path, volume=None):
     try:
         s = pygame.mixer.Sound(path)
@@ -380,9 +356,7 @@ snd_complete = safe_sound(os.path.join(ASSETS_DIR, "level_complete.wav"))
 snd_buy = safe_sound(os.path.join(ASSETS_DIR, "purchase-success-384963.mp3"))
 snd_menu_click = safe_sound(os.path.join(ASSETS_DIR, "menu_click.wav"))
 
-# -----------------------------
 # Save + laptop asset loader
-# -----------------------------
 save = load_save()
 
 img_laptop_nohands = None
@@ -398,9 +372,7 @@ def reload_laptop_asset():
 
 reload_laptop_asset()
 
-# -----------------------------
 # UI helpers
-# -----------------------------
 def draw_star_row(x, y, n, size=18, gap=8):
     for i in range(3):
         cx = x + i*(size+gap) + size//2
@@ -465,9 +437,7 @@ def menu_button(rect, text, enabled=True):
     screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
     return hover and enabled
 
-# -----------------------------
 # Game helpers
-# -----------------------------
 def schedule_next_check(play_state, params):
     BOSS_SOUND_START_OFFSET = 0.5
     play_state["next_check_in"] = random.uniform(params["min_wait"], params["max_wait"]) - BOSS_SOUND_START_OFFSET
@@ -505,9 +475,7 @@ def set_boss_path(play_state, direction="in"):
         play_state["boss_start"] = (start_x, BOSS_START_Y)
         play_state["boss_end"] = (end_x, BOSS_END_Y)
 
-# -----------------------------
 # Game state
-# -----------------------------
 scene = SCENE_MAIN_MENU
 selected_level = 1
 last_run_score = 0
@@ -605,9 +573,7 @@ def buy_or_equip(item_id: str):
     write_save(save)
     reload_laptop_asset()
 
-# -----------------------------
 # Main loop
-# -----------------------------
 running = True
 while running:
     dt = clock.tick(FPS) / 1000.0
@@ -762,9 +728,9 @@ while running:
             write_save(save)
             scene = SCENE_GAMEOVER
 
-    # -----------------------------
+
     # DRAW
-    # -----------------------------
+
     if scene == SCENE_MAIN_MENU:
         if HAS_MENU_BG and main_menu_bg is not None:
             screen.blit(main_menu_bg, (0, 0))
