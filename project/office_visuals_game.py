@@ -71,7 +71,7 @@ SHOP_ITEMS = {
 
     # --- Telefoons ---
     "phone_default":  {"type": "phone",  "price": 0,   "file": "phone.png",           "name": "Phone Default"},
-    "kity_phone":    {"type": "phone",  "price": 250, "file": "kity_phone.png",     "name": "Kity Phone"},
+    "kity_phone":     {"type": "phone",  "price": 250, "file": "kity_phone.png",      "name": "Kity Phone"},
 }
 
 # -----------------------------
@@ -266,12 +266,23 @@ except Exception:
     HAS_CAUGHT_BG = False
     img_caught_bg = None
 
+# ✅ NIEUW: level select background (zoals code 1)
+try:
+    img_level_select_bg = load_image("office_building.png")
+    HAS_LEVEL_SELECT_BG = True
+except Exception:
+    HAS_LEVEL_SELECT_BG = False
+    img_level_select_bg = None
+
 # -----------------------------
 # Globals die door layout bepaald worden
 # -----------------------------
 background_s = None
 main_menu_bg = None
 caught_bg = None
+
+# ✅ NIEUW: scaled level select background
+level_select_bg = None
 
 desk_s = None
 desk_h = 0
@@ -310,7 +321,7 @@ THUMB_W, THUMB_H = 180, 95
 shop_thumbs = {}
 
 def recalc_layout():
-    global background_s, main_menu_bg, caught_bg
+    global background_s, main_menu_bg, caught_bg, level_select_bg
     global GRID_LEFT, GRID_TOP, TILE_W, TILE_H
     global DESK_POS, desk_scale, desk_h, desk_s
     global LAPTOP_SIZE, LAPTOP_POS
@@ -330,6 +341,10 @@ def recalc_layout():
         main_menu_bg = scale(img_main_menu_bg, WIDTH, HEIGHT)
     if HAS_CAUGHT_BG and img_caught_bg is not None:
         caught_bg = scale(img_caught_bg, WIDTH, HEIGHT)
+
+    # ✅ NIEUW: level select bg schalen (zoals code 1)
+    if HAS_LEVEL_SELECT_BG and img_level_select_bg is not None:
+        level_select_bg = scale(img_level_select_bg, WIDTH, HEIGHT)
 
     TILE_W = int(140 * sx)
     TILE_H = int(110 * sy)
@@ -357,7 +372,6 @@ def recalc_layout():
     hands_0_s = scale(img_hands_0, *LAPTOP_SIZE)
     hands_1_s = scale(img_hands_1, *LAPTOP_SIZE)
 
-    # ✅ smoking hand scale mee
     smoking_hand_s = scale(img_smoking_hand, *LAPTOP_SIZE)
 
     BOSS_FAR = (int(190 * sx), int(285 * sy))
@@ -368,7 +382,6 @@ def recalc_layout():
     THUMB_W = int(180 * sx)
     THUMB_H = int(95 * sy)
 
-    # phone skin opnieuw schalen na resize
     if img_phone_skin is not None:
         phone_skin_s = scale(img_phone_skin, *PHONE_SIZE)
 
@@ -669,7 +682,6 @@ def start_level(level_num: int):
     play["hands_anim_frame"] = 0
     play["pre_walk_sound_started"] = False
 
-    # ✅ reset smoking/high effect
     play["smoking"] = False
     play["smoking_timer"] = 0.0
     play["high_timer"] = 0.0
@@ -727,7 +739,6 @@ while running:
                     snd_typing.stop()
                     snd_phone_use.play(-1)
 
-                # ✅ roken starten (zoals code 1)
                 if event.key == pygame.K_c and not play["gameover"] and not play["phone"]:
                     play["smoking"] = True
                     snd_typing.stop()
@@ -742,7 +753,6 @@ while running:
                 if not play["gameover"] and not play["smoking"]:
                     snd_typing.play(-1)
 
-            # ✅ roken stoppen (zoals code 1)
             if scene == SCENE_PLAY and event.key == pygame.K_c:
                 play["smoking"] = False
                 if not play["gameover"]:
@@ -752,7 +762,6 @@ while running:
     if scene == SCENE_PLAY and not play["gameover"]:
         params = make_level_params(selected_level - 1)
 
-        # hands anim (stop tijdens phone of smoking)
         if not play["phone"] and not play["smoking"]:
             play["hands_anim_t"] += dt
             if play["hands_anim_t"] >= 0.15:
@@ -762,7 +771,6 @@ while running:
             play["hands_anim_t"] = 0.0
             play["hands_anim_frame"] = 0
 
-        # scoring + combo (+ high bonus)
         if play["phone"]:
             play["phone_hold_time"] += dt
             combo_curve_exponent = 0.5
@@ -773,7 +781,6 @@ while running:
         else:
             play["phone_hold_time"] = 0.0
 
-        # ✅ smoking logic (uit code 1)
         if play["smoking"]:
             play["smoking_timer"] += dt
             if play["smoking_timer"] >= 5.0:
@@ -784,7 +791,6 @@ while running:
         else:
             play["smoking_timer"] = 0.0
 
-        # ✅ high timer countdown + shake + hallucination color
         if play["high_timer"] > 0:
             play["high_timer"] -= dt
             play["shake_x"] = random.randint(-15, 15)
@@ -820,7 +826,6 @@ while running:
 
         elif play["boss_state"] == WALKING_IN:
             play["reaction_timer"] += dt
-            # ✅ catch ook bij roken
             if (play["phone"] or play["smoking"]) and play["reaction_timer"] > params["grace"]:
                 play["caught"] = True
                 play["gameover"] = True
@@ -832,7 +837,6 @@ while running:
                 snd_boss_chatter.play(-1)
 
         elif play["boss_state"] == LOOKING:
-            # ✅ catch ook bij roken
             if play["phone"] or play["smoking"]:
                 play["caught"] = True
                 play["gameover"] = True
@@ -853,7 +857,6 @@ while running:
                 if not play["phone"] and not play["smoking"] and not play["gameover"]:
                     snd_typing.play(-1)
 
-        # WIN condition
         if play["score"] >= STAR_3:
             last_run_score = int(play["score"])
             last_run_level = selected_level
@@ -873,7 +876,6 @@ while running:
             write_save(save)
             scene = SCENE_COMPLETE
 
-        # GAMEOVER rewards
         if play["gameover"]:
             last_run_score = int(play["score"])
             last_run_level = selected_level
@@ -932,8 +934,20 @@ while running:
         screen.blit(footer_text, (WIDTH//2 - footer_text.get_width()//2, HEIGHT - int(HEIGHT * 0.06)))
 
     elif scene == SCENE_LEVEL_SELECT:
-        pygame.draw.rect(screen, (170, 210, 240), (0, 0, WIDTH, int(HEIGHT * 0.30)))
-        pygame.draw.rect(screen, (120, 180, 230), (0, int(HEIGHT * 0.30), WIDTH, HEIGHT - int(HEIGHT * 0.30)))
+        # ✅ Alleen background vervangen: office_building.jpg + overlays (rest HUD blijft code 2)
+        if HAS_LEVEL_SELECT_BG and level_select_bg is not None:
+            screen.blit(level_select_bg, (0, 0))
+
+            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 64))  # semi-transparant zwart
+            screen.blit(overlay, (0, 0))
+
+            header_overlay = pygame.Surface((WIDTH, int(HEIGHT * 0.22)), pygame.SRCALPHA)
+            header_overlay.fill((0, 0, 0, 128))  # donkerder header
+            screen.blit(header_overlay, (0, 0))
+        else:
+            pygame.draw.rect(screen, (170, 210, 240), (0, 0, WIDTH, int(HEIGHT * 0.30)))
+            pygame.draw.rect(screen, (120, 180, 230), (0, int(HEIGHT * 0.30), WIDTH, HEIGHT - int(HEIGHT * 0.30)))
 
         back_rect = pygame.Rect(int(WIDTH * 0.02), int(HEIGHT * 0.03), int(WIDTH * 0.12), int(HEIGHT * 0.07))
         if button(back_rect, "< Terug") and click:
@@ -986,11 +1000,9 @@ while running:
     elif scene == SCENE_SHOP:
         screen.fill(COL_PANEL_BG)
 
-        # Layout maten
         margin = int(WIDTH * 0.04)
         top_y = int(HEIGHT * 0.04)
 
-        # Panels (zelfde als ervoor)
         grid_x, grid_y = margin, int(HEIGHT * 0.22)
         grid_w, grid_h = int(WIDTH * 0.64), int(HEIGHT * 0.70)
         side_x = grid_x + grid_w + int(WIDTH * 0.02)
@@ -1000,16 +1012,13 @@ while running:
         grid_rect = pygame.Rect(grid_x, grid_y, grid_w, grid_h)
         side_rect = pygame.Rect(side_x, side_y, side_w, grid_h)
 
-        # -----------------------------
-        # Tabs: linksboven, naast elkaar, net boven de kader
-        # -----------------------------
         tab_h = int(HEIGHT * 0.08)
         tab_w = int(WIDTH * 0.18)
         tab_gap = int(WIDTH * 0.015)
 
-        tabs_y = grid_y - tab_h - int(HEIGHT * 0.02)  # net boven de kader
+        tabs_y = grid_y - tab_h - int(HEIGHT * 0.02)
 
-        phone_tab_rect  = pygame.Rect(grid_x,               tabs_y, tab_w, tab_h)
+        phone_tab_rect  = pygame.Rect(grid_x, tabs_y, tab_w, tab_h)
         laptop_tab_rect = pygame.Rect(grid_x + tab_w + tab_gap, tabs_y, tab_w, tab_h)
 
         if tab_button(phone_tab_rect, "TELEFOONS", shop_tab == "phone") and click:
@@ -1020,32 +1029,27 @@ while running:
             shop_tab = "laptop"
             shop_selected_id = save["equipped"].get("laptop", "laptop_default")
 
-        # -----------------------------
-        # Titel: groot en in het midden bovenaan
-        # -----------------------------
         title_surf = title_font.render("SHOP", True, COL_TEXT)
         title_x = WIDTH // 2 - title_surf.get_width() // 2
         title_y = top_y
         screen.blit(title_surf, (title_x, title_y))
 
-        # Coins rechtsboven
         coins_surf = font.render(f"Coins: {save['coins']}", True, COL_TEXT)
         screen.blit(coins_surf, (WIDTH - margin - coins_surf.get_width(), top_y + int(HEIGHT * 0.02)))
 
-        # Panels tekenen (ongewijzigd)
         pygame.draw.rect(screen, COL_CARD_BG, grid_rect, border_radius=18)
         pygame.draw.rect(screen, COL_BORDER, grid_rect, 3, border_radius=18)
         pygame.draw.rect(screen, COL_CARD_BG, side_rect, border_radius=18)
         pygame.draw.rect(screen, COL_BORDER, side_rect, 3, border_radius=18)
 
-        # items filter op tab
         items = [(iid, it) for (iid, it) in SHOP_ITEMS.items() if it["type"] == shop_tab]
         items.sort(key=lambda kv: int(kv[1]["price"]))
 
         if (shop_selected_id is None) or (shop_selected_id not in SHOP_ITEMS) or (SHOP_ITEMS[shop_selected_id]["type"] != shop_tab):
-            # kies default per tab
-            shop_selected_id = save["equipped"].get("phone" if shop_tab == "phone" else "laptop",
-                                                   "phone_default" if shop_tab == "phone" else "laptop_default")
+            shop_selected_id = save["equipped"].get(
+                "phone" if shop_tab == "phone" else "laptop",
+                "phone_default" if shop_tab == "phone" else "laptop_default"
+            )
 
         cols = 3
         pad = int(WIDTH * 0.012)
@@ -1054,7 +1058,6 @@ while running:
 
         mx, my = pygame.mouse.get_pos()
 
-        # Cards: thumbnail boven, tekst onder
         for idx, (item_id, item) in enumerate(items):
             rr = idx // cols
             cc = idx % cols
@@ -1098,7 +1101,6 @@ while running:
             if click and card.collidepoint(mx, my):
                 shop_selected_id = item_id
 
-        # Right panel (selected)
         if shop_selected_id in SHOP_ITEMS and SHOP_ITEMS[shop_selected_id]["type"] == shop_tab:
             item = SHOP_ITEMS[shop_selected_id]
             owned = bool(save["owned"].get(shop_selected_id, False))
@@ -1148,7 +1150,6 @@ while running:
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
 
-        # ✅ shake background (zoals code 1)
         screen.blit(background_s, (play["shake_x"], play["shake_y"]))
 
         if play["boss_state"] in (WALKING_IN, LOOKING, WALKING_OUT):
@@ -1229,7 +1230,6 @@ while running:
             pygame.draw.rect(screen, (50, 50, 50), (bar_x, bar_y, bar_w, bar_h), 2, border_radius=6)
             draw_text(screen, small, f"x{hold_bonus:.2f}", bar_x - int(WIDTH*0.03), bar_y - int(HEIGHT*0.04), (204, 0, 0))
 
-        # ✅ High effect overlay (zoals code 1)
         if play["high_timer"] > 0:
             overlay = pygame.Surface((WIDTH, HEIGHT))
             overlay.fill(play["hallucination_color"])
