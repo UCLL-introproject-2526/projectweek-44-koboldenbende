@@ -34,10 +34,8 @@ DESK_Y_OFFSET = 0
 # Hands overlay tuning
 HANDS_Y_OFFSET = 6
 
-# -----------------------------
-# ✅ Coins rewards (zoals code 1)
-# -----------------------------
-COINS_BASE_WIN = 50
+# Coins rewards
+COINS_BASE_WIN = 10
 COINS_PER_STAR = 10
 COINS_FIRST_CLEAR_BONUS = 100
 
@@ -672,15 +670,10 @@ while running:
             last_run_score = int(play["score"])
             last_run_level = selected_level
             last_run_stars = score_to_stars(last_run_score)
-
-            prev_stars = save["stars"][last_run_level - 1]
-            save["stars"][last_run_level - 1] = max(prev_stars, last_run_stars)
-
-            coins_earned = last_run_stars * COINS_PER_STAR
-            save["coins"] += coins_earned
-
-            write_save(save)
             scene = SCENE_GAMEOVER
+
+
+
 
     # -----------------------------
     # DRAW
