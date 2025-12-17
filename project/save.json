@@ -1,6 +1,7 @@
 {
-  "unlocked": 2,
+  "unlocked": 3,
   "stars": [
+    3,
     3,
     0,
     0,
@@ -14,7 +15,17 @@
     0,
     0,
     0,
-    0,
     0
-  ]
+  ],
+  "coins": 240,
+  "owned": {
+    "laptop_default": true,
+    "laptop_red": true,
+    "laptop_gaming": true,
+    "future_gaming": true,
+    "roze_laptop": true
+  },
+  "equipped": {
+    "laptop": "laptop_gaming"
+  }
 }
