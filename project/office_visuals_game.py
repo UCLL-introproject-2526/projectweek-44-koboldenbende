@@ -43,7 +43,7 @@ COINS_FIRST_CLEAR_BONUS = 50
 POPUP_DURATION = 1.4  # sec
 
 # -----------------------------
-# Main menu settings (code 1)
+# Main menu settings
 # -----------------------------
 MAIN_MENU_BG_COLOR = (45, 55, 70)      # fallback
 BUTTON_BG_COLOR = (109, 52, 18)        # donker bruin
@@ -51,7 +51,7 @@ BUTTON_TEXT_COLOR = (253, 221, 131)    # licht goud
 TITLE_COLOR = (255, 230, 180)
 
 # -----------------------------
-# Shop colors (code 2)
+# Shop colors
 # -----------------------------
 COL_TEXT = (109, 52, 18)           # text
 COL_BTN_BG = (253, 221, 131)       # knop background
@@ -79,20 +79,22 @@ def make_level_params(i: int):
     min_wait = 3.2 - 1.6 * t
     max_wait = 6.2 - 2.2 * t
     walk_in = 1.05 - 0.35 * t
+    walk_out = walk_in  # ✅ nieuw: terug lopen duurt zelfde als binnenlopen
     look = 1.20 + 0.70 * t
     grace = 0.60 - 0.35 * t
     mult = 1.00 + 0.30 * t
     min_wait = max(1.0, min_wait)
     max_wait = max(min_wait + 0.5, max_wait)
     walk_in = max(0.55, walk_in)
+    walk_out = max(0.55, walk_out)
     grace = max(0.18, grace)
-    return dict(min_wait=min_wait, max_wait=max_wait, walk_in=walk_in, look=look, grace=grace, mult=mult)
+    return dict(min_wait=min_wait, max_wait=max_wait, walk_in=walk_in, walk_out=walk_out, look=look, grace=grace, mult=mult)
 
 # Boss states
-WAIT, WALKING_IN, LOOKING = "wait", "walking_in", "looking"
+WAIT, WALKING_IN, LOOKING, WALKING_OUT = "wait", "walking_in", "looking", "walking_out"
 
 # Scenes
-SCENE_MAIN_MENU   = "main_menu"
+SCENE_MAIN_MENU    = "main_menu"
 SCENE_LEVEL_SELECT = "level_select"
 SCENE_PLAY         = "play"
 SCENE_COMPLETE     = "complete"
@@ -118,7 +120,7 @@ def clamp(v, a, b):
     return max(a, min(b, v))
 
 # -----------------------------
-# Save (coins + laptop shop)  (code 2)
+# Save (coins + laptop shop)
 # -----------------------------
 DEFAULT_SAVE = {
     "unlocked": 1,
@@ -222,7 +224,6 @@ def ui_button(rect, text, enabled=True):
     screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
     return hover and enabled
 
-# --- Main menu button (code 1 style)
 def menu_button(rect, text, enabled=True):
     mx, my = pygame.mouse.get_pos()
     hover = rect.collidepoint(mx, my)
@@ -261,12 +262,22 @@ def score_to_stars(score_int: int) -> int:
         return 1
     return 0
 
-def set_boss_path(play_state):
-    from_left = random.choice([True, False])
-    start_x = -80 if from_left else WIDTH + 80
-    end_x = LAPTOP_POS[0] + LAPTOP_SIZE[0] // 2
-    play_state["boss_start"] = (start_x, BOSS_START_Y)
-    play_state["boss_end"] = (end_x, BOSS_END_Y)
+def set_boss_path(play_state, direction="in"):
+    # binnenkomen: random side
+    if direction == "in":
+        from_left = random.choice([True, False])
+        start_x = -80 if from_left else WIDTH + 80
+        end_x = LAPTOP_POS[0] + LAPTOP_SIZE[0] // 2
+        play_state["boss_start"] = (start_x, BOSS_START_Y)
+        play_state["boss_end"] = (end_x, BOSS_END_Y)
+        play_state["boss_from_left"] = from_left
+    else:
+        # wegwandelen: terug naar dezelfde kant
+        from_left = play_state.get("boss_from_left", True)
+        start_x = LAPTOP_POS[0] + LAPTOP_SIZE[0] // 2
+        end_x = -80 if from_left else WIDTH + 80
+        play_state["boss_start"] = (start_x, BOSS_START_Y)
+        play_state["boss_end"] = (end_x, BOSS_END_Y)
 
 # -----------------------------
 # Init pygame
@@ -284,7 +295,7 @@ big = pygame.font.SysFont(None, 72)
 title_font = pygame.font.SysFont(None, 86)
 
 # -----------------------------
-# Load visuals (code 2)
+# Load visuals
 # -----------------------------
 img_background = load_image("Background.png")
 background_s = scale(img_background, WIDTH, HEIGHT)
@@ -303,6 +314,14 @@ try:
     HAS_MENU_BG = True
 except Exception:
     HAS_MENU_BG = False
+
+# Game over background: caught_bg.png
+try:
+    img_caught_bg = load_image("caught_bg.png")
+    caught_bg = scale(img_caught_bg, WIDTH, HEIGHT)
+    HAS_CAUGHT_BG = True
+except Exception:
+    HAS_CAUGHT_BG = False
 
 # Desk scaling
 desk_scale = WIDTH / img_desk.get_width()
@@ -332,12 +351,14 @@ BOSS_END_Y = LAPTOP_POS[1] + 12
 BOSS_START_Y = BOSS_END_Y
 
 # -----------------------------
-# Load audio (code 1/2 + buy + menu click)
+# Load audio
 # -----------------------------
 try:
     snd_boss_walk = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "loud-footsteps-62038-VEED.mp3"))
     snd_typing = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "typing-keyboard-asmr-356116.mp3"))
     snd_phone_use = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "Mathias Vandenboer_s Video - Dec 16, 2025-VEED.mp3.mp3"))
+    snd_boss_chatter = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "angry-boss-chatter.mp3"))
+    snd_boss_chatter.set_volume(0.5)
 
     try:
         snd_game_over = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "game_over.wav"))
@@ -355,21 +376,20 @@ except pygame.error as e:
     snd_phone_use = pygame.mixer.Sound(b"\x00\x00\x00\x00")
     snd_game_over = pygame.mixer.Sound(b"\x00\x00\x00\x00")
     snd_complete = pygame.mixer.Sound(b"\x00\x00\x00\x00")
+    snd_boss_chatter = pygame.mixer.Sound(b"\x00\x00\x00\x00")
 
-# Buy sound
 try:
     snd_buy = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "purchase-success-384963.mp3"))
 except Exception:
     snd_buy = pygame.mixer.Sound(b"\x00\x00\x00\x00")
 
-# Menu click sound (optional)
 try:
     snd_menu_click = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "menu_click.wav"))
 except Exception:
     snd_menu_click = pygame.mixer.Sound(b"\x00\x00\x00\x00")
 
 # -----------------------------
-# Save + laptop asset loader (code 2)
+# Save + laptop asset loader
 # -----------------------------
 save = load_save()
 
@@ -423,6 +443,7 @@ popup_timer = 0.0
 play = {
     "score": 0.0,
     "phone": False,
+    "phone_hold_time": 0.0,
     "gameover": False,
     "caught": False,
     "boss_state": WAIT,
@@ -431,6 +452,7 @@ play = {
     "reaction_timer": 0.0,
     "boss_start": (0, 0),
     "boss_end": (0, 0),
+    "boss_from_left": True,
 
     "hands_anim_t": 0.0,
     "hands_anim_frame": 0,
@@ -442,6 +464,7 @@ def stop_all_loop_sounds():
     snd_boss_walk.stop()
     snd_typing.stop()
     snd_phone_use.stop()
+    snd_boss_chatter.stop()
 
 def start_level(level_num: int):
     global scene, selected_level
@@ -450,6 +473,7 @@ def start_level(level_num: int):
 
     play["score"] = 0.0
     play["phone"] = False
+    play["phone_hold_time"] = 0.0
     play["gameover"] = False
     play["caught"] = False
     play["boss_state"] = WAIT
@@ -457,6 +481,7 @@ def start_level(level_num: int):
     play["reaction_timer"] = 0.0
     play["boss_start"] = (0, 0)
     play["boss_end"] = (0, 0)
+    play["boss_from_left"] = True
     play["hands_anim_t"] = 0.0
     play["hands_anim_frame"] = 0
     play["pre_walk_sound_started"] = False
@@ -513,7 +538,7 @@ while running:
     if popup_timer > 0:
         popup_timer = max(0.0, popup_timer - dt)
 
-    # scene change sound logic (code 1/2)
+    # scene change sound logic
     if scene != current_scene:
         stop_all_loop_sounds()
 
@@ -539,7 +564,6 @@ while running:
 
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                # ESC behavior zoals code 1: altijd terug richting main menu
                 if scene == SCENE_PLAY:
                     scene = SCENE_MAIN_MENU
                 elif scene in (SCENE_LEVEL_SELECT, SCENE_SHOP, SCENE_COMPLETE, SCENE_GAMEOVER):
@@ -565,6 +589,7 @@ while running:
     if scene == SCENE_PLAY and not play["gameover"]:
         params = make_level_params(selected_level - 1)
 
+        # hands anim
         if not play["phone"]:
             play["hands_anim_t"] += dt
             if play["hands_anim_t"] >= 0.15:
@@ -574,9 +599,10 @@ while running:
             play["hands_anim_t"] = 0.0
             play["hands_anim_frame"] = 0
 
+        # scoring + combo
         if play["phone"]:
             play["phone_hold_time"] += dt
-            combo_curve_exponent = 0.5  # slower ramp
+            combo_curve_exponent = 0.5
             raw_bonus = 1.0 + (play["phone_hold_time"] ** combo_curve_exponent)
             hold_bonus = min(raw_bonus, MAX_HOLD_BONUS)
             play["score"] += PHONE_POINTS_PER_SEC * hold_bonus * params["mult"] * dt
@@ -595,8 +621,7 @@ while running:
                 play["boss_state"] = WALKING_IN
                 play["reaction_timer"] = 0.0
                 play["caught"] = False
-                set_boss_path(play)
-                play["boss_timer"] = 0.0
+                set_boss_path(play, direction="in")
 
         elif play["boss_state"] == WALKING_IN:
             play["reaction_timer"] += dt
@@ -608,6 +633,7 @@ while running:
                 play["boss_timer"] = 0.0
                 play["boss_state"] = LOOKING
                 snd_boss_walk.stop()
+                snd_boss_chatter.play(-1)
 
         elif play["boss_state"] == LOOKING:
             if play["phone"]:
@@ -615,13 +641,24 @@ while running:
                 play["gameover"] = True
 
             if play["boss_timer"] >= params["look"]:
+                # ✅ eerst wegwandelen ipv despawnen
+                play["boss_state"] = WALKING_OUT
+                play["boss_timer"] = 0.0
+                snd_boss_chatter.stop()
+                set_boss_path(play, direction="out")
+                snd_boss_walk.play(-1)
+
+        elif play["boss_state"] == WALKING_OUT:
+            # baas kijkt niet meer, dus geen catch
+            if play["boss_timer"] >= params["walk_out"]:
                 play["boss_state"] = WAIT
                 play["boss_timer"] = 0.0
+                snd_boss_walk.stop()
                 schedule_next_check(play, params)
-                if not play["phone"]:
+                if not play["phone"] and not play["gameover"]:
                     snd_typing.play(-1)
 
-        # Win condition (coins zoals code 2)
+        # Win condition
         if play["score"] >= STAR_3:
             last_run_score = int(play["score"])
             last_run_level = selected_level
@@ -663,7 +700,6 @@ while running:
                 for j in range(0, HEIGHT, 40):
                     pygame.draw.rect(screen, (35, 45, 60), (i, j, 40, 40), 1)
 
-        # Buttons
         button_width = 300
         button_height = 60
         button_x = WIDTH//2 - button_width//2
@@ -671,9 +707,11 @@ while running:
         start_rect = pygame.Rect(button_x, 180, button_width, button_height)
         if menu_button(start_rect, "START GAME") and click:
             start_level(save["unlocked"])
+
         levels_rect = pygame.Rect(button_x, 260, button_width, button_height)
         if menu_button(levels_rect, "LEVEL SELECT") and click:
             scene = SCENE_LEVEL_SELECT
+
         shop_rect = pygame.Rect(button_x, 340, button_width, button_height)
         if menu_button(shop_rect, "SHOP") and click:
             scene = SCENE_SHOP
@@ -691,11 +729,11 @@ while running:
         pygame.draw.rect(screen, (170, 210, 240), (0, 0, WIDTH, 160))
         pygame.draw.rect(screen, (120, 180, 230), (0, 160, WIDTH, HEIGHT-160))
 
-        # Back to main menu
         back_rect = pygame.Rect(20, 20, 120, 40)
         if button(back_rect, "< Terug") and click:
             scene = SCENE_MAIN_MENU
 
+        draw_text(screen, big, "LEVELS", 40, 30, (255, 255, 255))
         draw_text(screen, font, f"Unlocked: {save['unlocked']} / {TOTAL_LEVELS}", 42, 95, (255, 255, 255))
         draw_text(screen, font, f"Coins: {save['coins']}", WIDTH - 170, 95, (255, 255, 255))
 
@@ -749,14 +787,12 @@ while running:
         side_x = grid_x + grid_w + 20
         side_y = grid_y
         side_w = WIDTH - side_x - 40
-        side_h = grid_h
 
         grid_rect = pygame.Rect(grid_x, grid_y, grid_w, grid_h)
-        side_rect = pygame.Rect(side_x, side_y, side_w, side_h)
+        side_rect = pygame.Rect(side_x, side_y, side_w, grid_h)
 
         pygame.draw.rect(screen, COL_CARD_BG, grid_rect, border_radius=18)
         pygame.draw.rect(screen, COL_BORDER, grid_rect, 3, border_radius=18)
-
         pygame.draw.rect(screen, COL_CARD_BG, side_rect, border_radius=18)
         pygame.draw.rect(screen, COL_BORDER, side_rect, 3, border_radius=18)
 
@@ -782,10 +818,7 @@ while running:
             equipped = (save["equipped"].get("laptop") == item_id)
             selected = (shop_selected_id == item_id)
 
-            bg = (255, 255, 255)
-            if selected:
-                bg = (255, 245, 210)
-
+            bg = (255, 255, 255) if not selected else (255, 245, 210)
             pygame.draw.rect(screen, bg, card, border_radius=16)
             pygame.draw.rect(screen, COL_BORDER if selected else COL_MUTED, card, 3, border_radius=16)
 
@@ -858,9 +891,12 @@ while running:
 
         screen.blit(background_s, (0, 0))
 
-        if play["boss_state"] in (WALKING_IN, LOOKING):
+        # boss: ook tekenen tijdens WALKING_OUT
+        if play["boss_state"] in (WALKING_IN, LOOKING, WALKING_OUT):
             if play["boss_state"] == WALKING_IN:
                 t = clamp(play["boss_timer"] / params["walk_in"], 0.0, 1.0)
+            elif play["boss_state"] == WALKING_OUT:
+                t = clamp(play["boss_timer"] / params["walk_out"], 0.0, 1.0)
             else:
                 t = 1.0
 
@@ -886,6 +922,7 @@ while running:
         else:
             screen.blit(hands_0_s if play["hands_anim_frame"] == 0 else hands_1_s, hands_pos)
 
+        # UI
         draw_text(screen, font,
                   f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
                   16, 14, (0, 0, 0))
@@ -895,6 +932,8 @@ while running:
         if play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - play["reaction_timer"])
             draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (204, 0, 0))
+        elif play["boss_state"] == LOOKING:
+            draw_text(screen, font, "BAAS KIJKT!", 16, 72, (204, 0, 0))
 
         pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
         bar = pygame.Rect(16, 110, 260, 18)
@@ -902,40 +941,22 @@ while running:
         pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
         draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (0, 0, 0))
 
-        # Vertical multiplier bar (bottom-right corner)
-# -----------------------------
+        # Vertical multiplier bar (bottom-right)
         if play["phone"]:
-            combo_curve_exponent = 0.5  # same as in score calculation
+            combo_curve_exponent = 0.5
             raw_bonus = 1.0 + (play["phone_hold_time"] ** combo_curve_exponent)
             hold_bonus = min(raw_bonus, MAX_HOLD_BONUS)
 
-            # bar settings
             bar_w = 20
             bar_h = 120
             bar_x = WIDTH - bar_w - 20
             bar_y = HEIGHT - bar_h - 20
 
-            # background
             pygame.draw.rect(screen, (100, 100, 100), (bar_x, bar_y, bar_w, bar_h), border_radius=6)
-            # fill
             fill_h = int(bar_h * (hold_bonus / MAX_HOLD_BONUS))
             pygame.draw.rect(screen, (255, 200, 50), (bar_x, bar_y + bar_h - fill_h, bar_w, fill_h), border_radius=6)
-            # border
             pygame.draw.rect(screen, (50, 50, 50), (bar_x, bar_y, bar_w, bar_h), 2, border_radius=6)
-
-            # optional text above the bar
             draw_text(screen, small, f"x{hold_bonus:.2f}", bar_x - 10, bar_y - 24, (204, 0, 0))
-
-
-        if play["boss_state"] == WALKING_IN:
-            left = max(0.0, params["grace"] - play["reaction_timer"])
-            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (204,0,0))
-
-        pct = clamp(play["score"]/STAR_3, 0.0, 1.0)
-        bar = pygame.Rect(16, 110, 260, 18)
-        pygame.draw.rect(screen, (20,20,25), bar, border_radius=8)
-        pygame.draw.rect(screen, (90,220,120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
-        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (0,0,0))
 
     elif scene == SCENE_COMPLETE:
         screen.fill((170, 230, 190))
@@ -957,17 +978,27 @@ while running:
             button(b2, "Laatste level!", enabled=False)
 
     elif scene == SCENE_GAMEOVER:
-        screen.fill((245, 190, 190))
-        draw_text(screen, big, "GAME OVER", 60, 70, (80, 20, 20))
-        draw_text(screen, font, f"Level {last_run_level}  Score: {last_run_score}", 65, 165, (80, 20, 20))
+        if HAS_CAUGHT_BG:
+            screen.blit(caught_bg, (0, 0))
+            overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 70))
+            screen.blit(overlay, (0, 0))
+        else:
+            screen.fill((25, 25, 25))
 
-        b1 = pygame.Rect(60, 300, 300, 60)
-        b2 = pygame.Rect(60, 370, 300, 60)
+        bw, bh = 320, 62
+        bx = WIDTH // 2 - bw // 2
 
-        if button(b1, "Opnieuw proberen") and click:
+        retry_rect = pygame.Rect(bx, 360, bw, bh)
+        if menu_button(retry_rect, "RETRY") and click:
             start_level(last_run_level)
-        if button(b2, "Hoofdmenu") and click:
-            scene = SCENE_MAIN_MENU
+
+        back_rect = pygame.Rect(bx, 435, bw, bh)
+        if menu_button(back_rect, "TERUG NAAR LEVELS") and click:
+            scene = SCENE_LEVEL_SELECT
+
+        hint = small.render("ESC = hoofdmenu", True, (255, 255, 255))
+        screen.blit(hint, (WIDTH//2 - hint.get_width()//2, HEIGHT - 30))
 
     pygame.display.flip()
 
