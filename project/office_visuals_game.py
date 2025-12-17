@@ -35,9 +35,9 @@ DESK_Y_OFFSET = 0
 HANDS_Y_OFFSET = 6
 
 # Coins rewards
-COINS_BASE_WIN = 10
+COINS_BASE_WIN = 50
 COINS_PER_STAR = 10
-COINS_FIRST_CLEAR_BONUS = 50
+COINS_FIRST_CLEAR_BONUS = 100
 
 # Popup
 POPUP_DURATION = 1.4  # sec
@@ -682,7 +682,21 @@ while running:
             last_run_score = int(play["score"])
             last_run_level = selected_level
             last_run_stars = score_to_stars(last_run_score)
+
+            # Update stars if the current attempt got more than before
+            prev_stars = save["stars"][last_run_level - 1]
+            save["stars"][last_run_level - 1] = max(prev_stars, last_run_stars)
+
+            # Reward coins based on stars, even if failed
+            coins_earned = last_run_stars * COINS_PER_STAR
+            save["coins"] += coins_earned
+
+            write_save(save)  # Save progress
+
             scene = SCENE_GAMEOVER
+
+
+
 
     # -----------------------------
     # DRAW
