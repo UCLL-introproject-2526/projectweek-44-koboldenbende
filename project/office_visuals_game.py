@@ -733,7 +733,6 @@ while running:
         if button(back_rect, "< Terug") and click:
             scene = SCENE_MAIN_MENU
 
-        draw_text(screen, big, "LEVELS", 40, 30, (255, 255, 255))
         draw_text(screen, font, f"Unlocked: {save['unlocked']} / {TOTAL_LEVELS}", 42, 95, (255, 255, 255))
         draw_text(screen, font, f"Coins: {save['coins']}", WIDTH - 170, 95, (255, 255, 255))
 
