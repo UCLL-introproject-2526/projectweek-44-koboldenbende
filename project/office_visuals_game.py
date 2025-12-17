@@ -28,10 +28,10 @@ STAR_2 = 320
 STAR_3 = 500
 
 # Desk overlay tuning (pixel-perfect)
-DESK_Y_OFFSET = 0  # <-- zet bv. +3 of -2 als hij net niet overlapt
+DESK_Y_OFFSET = 0
 
 # Hands overlay tuning (pixel-perfect)
-HANDS_Y_OFFSET = 6  # <-- iets naar onder (positief = omlaag, negatief = omhoog)
+HANDS_Y_OFFSET = 6
 
 # Difficulty generator per level index (0..14)
 def make_level_params(i: int):
@@ -136,7 +136,11 @@ def button(rect, text, enabled=True):
 # Game helpers
 # -----------------------------
 def schedule_next_check(play_state, params):
-    play_state["next_check_in"] = random.uniform(params["min_wait"], params["max_wait"])
+    # Code 1 sound timing: start footsteps 0.5s BEFORE boss walks in
+    BOSS_SOUND_START_OFFSET = 0.5
+    play_state["next_check_in"] = random.uniform(params["min_wait"], params["max_wait"]) - BOSS_SOUND_START_OFFSET
+    play_state["next_check_in"] = max(0.1, play_state["next_check_in"])
+    play_state["pre_walk_sound_started"] = False
 
 def score_to_stars(score_int: int) -> int:
     if score_int >= STAR_3:
@@ -159,8 +163,10 @@ def set_boss_path(play_state):
 # Init pygame
 # -----------------------------
 pygame.init()
+pygame.mixer.init()  # Code 1
+
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Office Game - Desk Layer + Hands Anim")
+pygame.display.set_caption("Office Game - Desk Layer + Hands Anim (with sounds)")
 clock = pygame.time.Clock()
 
 font = pygame.font.SysFont(None, 28)
@@ -168,20 +174,15 @@ small = pygame.font.SysFont(None, 22)
 big = pygame.font.SysFont(None, 72)
 
 # -----------------------------
-# Load visuals (ONLY)
+# Load visuals (code 2)
 # -----------------------------
 # assets: Background.png, desk.png, boss.png, laptopnohands.png, hands1.png, hands2.png, phone.png
 img_background = load_image("Background.png")
 img_desk = load_image("desk.png")
 img_boss = load_image("boss.png")
-
-# Base laptop ALWAYS
 img_laptop_nohands = load_image("laptopnohands.png")
-
-# Hands overlays (typing frames)
 img_hands_0 = load_image("hands1.png")
 img_hands_1 = load_image("hands2.png")
-
 img_phone = load_image("phone.png")
 
 background_s = scale(img_background, WIDTH, HEIGHT)
@@ -209,13 +210,39 @@ hands_0_s = scale(img_hands_0, *LAPTOP_SIZE)
 hands_1_s = scale(img_hands_1, *LAPTOP_SIZE)
 phone_s = scale(img_phone, *PHONE_SIZE)
 
-# Boss sizing
+# Boss sizing (code 2)
 BOSS_FAR  = (190, 285)
 BOSS_NEAR = (190, 285)
 
-# Boss y path (achter "desk/laptop")
+# Boss y path (achter desk/laptop)
 BOSS_END_Y = LAPTOP_POS[1] + 12
 BOSS_START_Y = BOSS_END_Y
+
+# -----------------------------
+# Load audio (EXACT uit code 1)
+# -----------------------------
+try:
+    snd_boss_walk = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "loud-footsteps-62038-VEED.mp3"))
+    snd_typing = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "typing-keyboard-asmr-356116.mp3"))
+    snd_phone_use = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "Mathias Vandenboer_s Video - Dec 16, 2025-VEED.mp3.mp3"))
+
+    try:
+        snd_game_over = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "game_over.wav"))
+    except Exception:
+        snd_game_over = pygame.mixer.Sound(b'\x00\x00\x00\x00')
+
+    try:
+        snd_complete = pygame.mixer.Sound(os.path.join(ASSETS_DIR, "level_complete.wav"))
+    except Exception:
+        snd_complete = pygame.mixer.Sound(b'\x00\x00\x00\x00')
+
+except pygame.error as e:
+    print(f"Fout bij het laden van audio: {e}")
+    snd_boss_walk = pygame.mixer.Sound(b'\x00\x00\x00\x00')
+    snd_typing = pygame.mixer.Sound(b'\x00\x00\x00\x00')
+    snd_phone_use = pygame.mixer.Sound(b'\x00\x00\x00\x00')
+    snd_game_over = pygame.mixer.Sound(b'\x00\x00\x00\x00')
+    snd_complete = pygame.mixer.Sound(b'\x00\x00\x00\x00')
 
 # -----------------------------
 # Game state
@@ -227,6 +254,8 @@ selected_level = 1
 last_run_score = 0
 last_run_level = 1
 last_run_stars = 0
+
+current_scene = None  # code 1 scene sound switching
 
 play = {
     "score": 0.0,
@@ -243,6 +272,9 @@ play = {
     # hands anim (idle)
     "hands_anim_t": 0.0,
     "hands_anim_frame": 0,
+
+    # code 1 sound timing flag
+    "pre_walk_sound_started": False,
 }
 
 def start_level(level_num: int):
@@ -263,8 +295,16 @@ def start_level(level_num: int):
     play["hands_anim_t"] = 0.0
     play["hands_anim_frame"] = 0
 
+    # stop alle geluiden (code 1)
+    snd_boss_walk.stop()
+    snd_typing.stop()
+    snd_phone_use.stop()
+
     schedule_next_check(play, params)
     scene = SCENE_PLAY
+
+    # start direct met typen (code 1)
+    snd_typing.play(-1)
 
 # -----------------------------
 # Main loop
@@ -272,6 +312,22 @@ def start_level(level_num: int):
 running = True
 while running:
     dt = clock.tick(FPS) / 1000.0
+
+    # Geluidslogica voor scène-wisseling (code 1)
+    if scene != current_scene:
+        snd_boss_walk.stop()
+        snd_typing.stop()
+        snd_phone_use.stop()
+
+        if scene == SCENE_COMPLETE:
+            snd_complete.play()
+        elif scene == SCENE_GAMEOVER:
+            snd_game_over.play()
+
+        if scene == SCENE_PLAY and not play["phone"] and not play["gameover"]:
+            snd_typing.play(-1)
+
+        current_scene = scene
 
     click = False
     for event in pygame.event.get():
@@ -288,6 +344,9 @@ while running:
             if scene == SCENE_PLAY:
                 if event.key == pygame.K_SPACE and not play["gameover"]:
                     play["phone"] = True
+                    # STOP typen + START GSM (code 1)
+                    snd_typing.stop()
+                    snd_phone_use.play(-1)
 
             if event.key == pygame.K_r and scene in (SCENE_GAMEOVER, SCENE_COMPLETE):
                 scene = SCENE_LEVEL_SELECT
@@ -295,15 +354,19 @@ while running:
         if event.type == pygame.KEYUP:
             if scene == SCENE_PLAY and event.key == pygame.K_SPACE:
                 play["phone"] = False
+                # STOP GSM + HERVAT typen (code 1)
+                snd_phone_use.stop()
+                if not play["gameover"]:
+                    snd_typing.play(-1)
 
     # Update play
     if scene == SCENE_PLAY and not play["gameover"]:
         params = make_level_params(selected_level - 1)
 
-        # hands idle anim (only when NOT on phone)
+        # hands idle anim (only when NOT on phone) (code 2)
         if not play["phone"]:
             play["hands_anim_t"] += dt
-            if play["hands_anim_t"] >= 0.15:   # <-- typ-snelheid (sec per frame)
+            if play["hands_anim_t"] >= 0.15:
                 play["hands_anim_t"] -= 0.15
                 play["hands_anim_frame"] = 1 - play["hands_anim_frame"]
         else:
@@ -316,12 +379,19 @@ while running:
         play["boss_timer"] += dt
 
         if play["boss_state"] == WAIT:
-            if play["boss_timer"] >= play["next_check_in"]:
+            # start voetstappen 0.5s vóór walk-in (code 1)
+            if play["boss_timer"] >= play["next_check_in"] and not play["pre_walk_sound_started"]:
+                snd_boss_walk.play(-1)
+                play["pre_walk_sound_started"] = True
+
+            # na +0.5s start WALKING_IN (code 1)
+            if play["boss_timer"] >= play["next_check_in"] + 0.5:
                 play["boss_timer"] = 0.0
                 play["boss_state"] = WALKING_IN
                 play["reaction_timer"] = 0.0
                 play["caught"] = False
                 set_boss_path(play)
+                play["boss_timer"] = 0.0
 
         elif play["boss_state"] == WALKING_IN:
             play["reaction_timer"] += dt
@@ -332,6 +402,7 @@ while running:
             if play["boss_timer"] >= params["walk_in"]:
                 play["boss_timer"] = 0.0
                 play["boss_state"] = LOOKING
+                snd_boss_walk.stop()  # code 1: stop footsteps when boss looks
 
         elif play["boss_state"] == LOOKING:
             if play["phone"]:
@@ -342,6 +413,10 @@ while running:
                 play["boss_state"] = WAIT
                 play["boss_timer"] = 0.0
                 schedule_next_check(play, params)
+
+                # hervat typing als niet op phone (code 1)
+                if not play["phone"]:
+                    snd_typing.play(-1)
 
         # Win condition
         if play["score"] >= STAR_3:
@@ -408,10 +483,10 @@ while running:
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
 
-        # LAYERS: background -> boss -> desk -> laptop(base) -> phone/hands -> UI
-        screen.blit(background_s, (0, 0))  # 1) background fullscreen
+        # layers: background -> boss -> desk -> laptop -> phone/hands -> UI
+        screen.blit(background_s, (0, 0))
 
-        # 2) boss behind desk
+        # boss behind desk
         if play["boss_state"] in (WALKING_IN, LOOKING):
             if play["boss_state"] == WALKING_IN:
                 t = clamp(play["boss_timer"] / params["walk_in"], 0.0, 1.0)
@@ -431,13 +506,12 @@ while running:
             boss_rect = boss_scaled.get_rect(center=(bx, by))
             screen.blit(boss_scaled, boss_rect)
 
-        # 3) desk overlay (bottom only, scaled-to-width)
+        # desk overlay
         screen.blit(desk_s, DESK_POS)
 
-        # 4) laptop base ALWAYS
+        # laptop base ALWAYS
         screen.blit(laptop_nohands_s, LAPTOP_POS)
 
-        # overlay: phone OR typing hands (hands slightly lower)
         hands_pos = (LAPTOP_POS[0], LAPTOP_POS[1] + HANDS_Y_OFFSET)
 
         if play["phone"]:
@@ -448,7 +522,7 @@ while running:
             else:
                 screen.blit(hands_1_s, hands_pos)
 
-        # 5) UI top
+        # UI top
         draw_text(screen, font,
                   f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
                   16, 14, (255, 255, 255))
@@ -459,7 +533,6 @@ while running:
             left = max(0.0, params["grace"] - play["reaction_timer"])
             draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (204, 0, 0))
 
-        # progress to win
         pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
         bar = pygame.Rect(16, 110, 260, 18)
         pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
