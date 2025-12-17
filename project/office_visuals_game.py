@@ -6,7 +6,6 @@ import pygame
 # -----------------------------
 # Config
 # -----------------------------
-WIDTH, HEIGHT = 960, 540
 FPS = 60
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
@@ -15,13 +14,10 @@ SAVE_PATH = os.path.join(os.path.dirname(__file__), "save.json")
 PHONE_POINTS_PER_SEC = 10
 MAX_HOLD_BONUS = 3.0  # Maximum multiplier
 
-# Level select layout
+# Level select layout (basis; wordt dynamisch geschaald)
 GRID_COLS = 5
 GRID_ROWS = 3
 TOTAL_LEVELS = GRID_COLS * GRID_ROWS  # 15
-TILE_W, TILE_H = 140, 110
-GRID_TOP = 140
-GRID_LEFT = (WIDTH - GRID_COLS * TILE_W) // 2
 
 # Stars thresholds
 STAR_1 = 180
@@ -35,7 +31,7 @@ DESK_Y_OFFSET = 0
 HANDS_Y_OFFSET = 6
 
 # -----------------------------
-# ✅ Coins rewards (zoals code 1)
+# Coins rewards
 # -----------------------------
 COINS_BASE_WIN = 50
 COINS_PER_STAR = 10
@@ -73,11 +69,10 @@ SHOP_ITEMS = {
 }
 
 # -----------------------------
-# Difficulty generator (MOEILIJKER PER LEVEL)  (code 2 blijft)
+# Difficulty generator
 # -----------------------------
 def make_level_params(i: int):
     lvl = i + 1
-    t = i / (TOTAL_LEVELS - 1)
 
     min_wait = max(0.55, 3.0 - 0.18 * lvl)
     max_wait = max(min_wait + 0.35, 8 - 0.22 * lvl)
@@ -117,13 +112,26 @@ def load_image(filename: str) -> pygame.Surface:
     return pygame.image.load(path).convert_alpha()
 
 def scale(img, w, h):
-    return pygame.transform.scale(img, (w, h))
+    return pygame.transform.smoothscale(img, (int(w), int(h)))
 
 def draw_text(surf, font_obj, text, x, y, color=(20, 20, 25)):
     surf.blit(font_obj.render(text, True, color), (x, y))
 
 def clamp(v, a, b):
     return max(a, min(b, v))
+
+def blit_fit_center(surf, img, rect, padding=8):
+    """Schaal img proportioneel zodat hij in rect past (met padding) en center hem."""
+    max_w = max(1, rect.w - 2*padding)
+    max_h = max(1, rect.h - 2*padding)
+    iw, ih = img.get_width(), img.get_height()
+    if iw <= 0 or ih <= 0:
+        return
+    s = min(max_w / iw, max_h / ih)
+    w, h = max(1, int(iw * s)), max(1, int(ih * s))
+    scaled = pygame.transform.smoothscale(img, (w, h))
+    dst = scaled.get_rect(center=rect.center)
+    surf.blit(scaled, dst)
 
 # -----------------------------
 # Save (coins + laptop shop)
@@ -182,6 +190,213 @@ def write_save(data):
             json.dump(data, f, indent=2)
     except Exception:
         pass
+
+# -----------------------------
+# Init pygame + dynamic fullscreen resolution
+# -----------------------------
+pygame.init()
+pygame.mixer.init()
+
+info = pygame.display.Info()
+WIDTH, HEIGHT = info.current_w, info.current_h
+
+screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN | pygame.SCALED)
+pygame.display.set_caption("Office Game - Main Menu + Shop")
+clock = pygame.time.Clock()
+
+# Fonts (dynamisch)
+def setup_fonts():
+    global font, small, big, title_font
+    sy = HEIGHT / 540
+    font = pygame.font.SysFont(None, max(18, int(28 * sy)))
+    small = pygame.font.SysFont(None, max(14, int(22 * sy)))
+    big = pygame.font.SysFont(None, max(34, int(72 * sy)))
+    title_font = pygame.font.SysFont(None, max(40, int(86 * sy)))
+
+setup_fonts()
+
+# -----------------------------
+# Load visuals (raw)
+# -----------------------------
+img_background = load_image("Background.png")
+img_desk = load_image("desk.png")
+
+# 3 bosses
+img_boss_1 = load_image("boss_lvl1.png")
+img_boss_2 = load_image("boss_lvl2.png")
+img_boss_3 = load_image("boss_lvl3.png")
+
+img_hands_0 = load_image("hands1.png")
+img_hands_1 = load_image("hands2.png")
+img_phone = load_image("phone.png")
+
+try:
+    img_main_menu_bg = load_image("main_menu_bg.png")
+    HAS_MENU_BG = True
+except Exception:
+    HAS_MENU_BG = False
+
+try:
+    img_caught_bg = load_image("caught_bg.png")
+    HAS_CAUGHT_BG = True
+except Exception:
+    HAS_CAUGHT_BG = False
+
+# -----------------------------
+# Globals die door layout bepaald worden
+# -----------------------------
+background_s = None
+main_menu_bg = None
+caught_bg = None
+
+desk_s = None
+desk_h = 0
+desk_scale = 1.0
+DESK_POS = (0, 0)
+
+TILE_W = 140
+TILE_H = 110
+GRID_TOP = 140
+GRID_LEFT = 0
+
+LAPTOP_SIZE = (520, 260)
+LAPTOP_POS = (0, 0)
+
+PHONE_SIZE = (300, 300)
+PHONE_POS = (0, 0)
+
+hands_0_s = None
+hands_1_s = None
+phone_s = None
+
+# Boss sizing (wordt berekend)
+BOSS_FAR = (190, 285)
+BOSS_NEAR = (190, 285)
+BOSS_END_Y = 0
+BOSS_START_Y = 0
+
+# Shop thumbs (wordt berekend)
+THUMB_W, THUMB_H = 180, 95
+shop_thumbs = {}
+
+def recalc_layout():
+    global background_s, main_menu_bg, caught_bg
+    global GRID_LEFT, GRID_TOP, TILE_W, TILE_H
+    global DESK_POS, desk_scale, desk_h, desk_s
+    global LAPTOP_SIZE, LAPTOP_POS
+    global PHONE_SIZE, PHONE_POS, phone_s
+    global hands_0_s, hands_1_s
+    global BOSS_END_Y, BOSS_START_Y
+    global BOSS_FAR, BOSS_NEAR
+    global THUMB_W, THUMB_H
+
+    sx = WIDTH / 960
+    sy = HEIGHT / 540
+
+    # Background fullscreen
+    background_s = scale(img_background, WIDTH, HEIGHT)
+
+    if HAS_MENU_BG:
+        main_menu_bg = scale(img_main_menu_bg, WIDTH, HEIGHT)
+    if HAS_CAUGHT_BG:
+        caught_bg = scale(img_caught_bg, WIDTH, HEIGHT)
+
+    # Level select grid
+    TILE_W = int(140 * sx)
+    TILE_H = int(110 * sy)
+    GRID_TOP = int(140 * sy)
+    GRID_LEFT = (WIDTH - GRID_COLS * TILE_W) // 2
+
+    # Desk
+    desk_scale = WIDTH / img_desk.get_width()
+    desk_h = int(img_desk.get_height() * desk_scale - 120 * sy)
+    desk_s = pygame.transform.smoothscale(img_desk, (WIDTH, desk_h))
+    DESK_POS = (0, HEIGHT - desk_h + int(DESK_Y_OFFSET * sy))
+
+    # Laptop (relatief t.o.v. schermbreedte)
+    laptop_w = int(WIDTH * 0.54)
+    laptop_h = int(laptop_w * (260 / 520))
+    LAPTOP_SIZE = (laptop_w, laptop_h)
+    LAPTOP_POS = (WIDTH // 2 - laptop_w // 2, HEIGHT - laptop_h - int(22 * sy))
+
+    # Phone
+    phone_w = int(laptop_w * (300 / 520))
+    phone_h = phone_w
+    PHONE_SIZE = (phone_w, phone_h)
+    PHONE_POS = (
+        WIDTH // 2 - phone_w // 2,
+        LAPTOP_POS[1] + (laptop_h // 2 - phone_h // 2) + int(6 * sy)
+    )
+
+    # Hands + phone scaled
+    hands_0_s = scale(img_hands_0, *LAPTOP_SIZE)
+    hands_1_s = scale(img_hands_1, *LAPTOP_SIZE)
+    phone_s = scale(img_phone, *PHONE_SIZE)
+
+    # Boss sizes
+    BOSS_FAR = (int(190 * sx), int(285 * sy))
+    BOSS_NEAR = (int(190 * sx), int(285 * sy))
+    BOSS_END_Y = LAPTOP_POS[1] + int(12 * sy)
+    BOSS_START_Y = BOSS_END_Y
+
+    # Shop thumbs mee schalen
+    THUMB_W = int(180 * sx)
+    THUMB_H = int(95 * sy)
+
+def build_shop_thumbs():
+    global shop_thumbs
+    shop_thumbs = {}
+    for item_id, item in SHOP_ITEMS.items():
+        try:
+            img = load_image(item["file"])
+            shop_thumbs[item_id] = pygame.transform.smoothscale(img, (THUMB_W, THUMB_H))
+        except Exception:
+            surf = pygame.Surface((THUMB_W, THUMB_H), pygame.SRCALPHA)
+            surf.fill((200, 200, 200))
+            shop_thumbs[item_id] = surf
+
+# Layout init
+recalc_layout()
+build_shop_thumbs()
+
+# -----------------------------
+# Load audio
+# -----------------------------
+def safe_sound(path, volume=None):
+    try:
+        s = pygame.mixer.Sound(path)
+        if volume is not None:
+            s.set_volume(volume)
+        return s
+    except Exception:
+        return pygame.mixer.Sound(b"\x00\x00\x00\x00")
+
+snd_boss_walk = safe_sound(os.path.join(ASSETS_DIR, "loud-footsteps-62038-VEED.mp3"))
+snd_typing = safe_sound(os.path.join(ASSETS_DIR, "typing-keyboard-asmr-356116.mp3"))
+snd_phone_use = safe_sound(os.path.join(ASSETS_DIR, "Mathias Vandenboer_s Video - Dec 16, 2025-VEED.mp3.mp3"))
+snd_boss_chatter = safe_sound(os.path.join(ASSETS_DIR, "angry-boss-chatter.mp3"), volume=0.5)
+snd_game_over = safe_sound(os.path.join(ASSETS_DIR, "game_over.wav"))
+snd_complete = safe_sound(os.path.join(ASSETS_DIR, "level_complete.wav"))
+snd_buy = safe_sound(os.path.join(ASSETS_DIR, "purchase-success-384963.mp3"))
+snd_menu_click = safe_sound(os.path.join(ASSETS_DIR, "menu_click.wav"))
+
+# -----------------------------
+# Save + laptop asset loader
+# -----------------------------
+save = load_save()
+
+img_laptop_nohands = None
+laptop_nohands_s = None
+
+def reload_laptop_asset():
+    global img_laptop_nohands, laptop_nohands_s
+    key = save["equipped"].get("laptop", "laptop_default")
+    if key not in SHOP_ITEMS:
+        key = "laptop_default"
+    img_laptop_nohands = load_image(SHOP_ITEMS[key]["file"])
+    laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
+
+reload_laptop_asset()
 
 # -----------------------------
 # UI helpers
@@ -289,134 +504,6 @@ def set_boss_path(play_state, direction="in"):
         end_x = -80 if from_left else WIDTH + 80
         play_state["boss_start"] = (start_x, BOSS_START_Y)
         play_state["boss_end"] = (end_x, BOSS_END_Y)
-
-# -----------------------------
-# Init pygame
-# -----------------------------
-pygame.init()
-pygame.mixer.init()
-
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Office Game - Main Menu + Shop")
-clock = pygame.time.Clock()
-
-font = pygame.font.SysFont(None, 28)
-small = pygame.font.SysFont(None, 22)
-big = pygame.font.SysFont(None, 72)
-title_font = pygame.font.SysFont(None, 86)
-
-# -----------------------------
-# Load visuals
-# -----------------------------
-img_background = load_image("Background.png")
-background_s = scale(img_background, WIDTH, HEIGHT)
-
-img_desk = load_image("desk.png")
-
-# ✅ 3 bosses
-img_boss_1 = load_image("boss_lvl1.png")
-img_boss_2 = load_image("boss_lvl2.png")
-img_boss_3 = load_image("boss_lvl3.png")
-
-img_hands_0 = load_image("hands1.png")
-img_hands_1 = load_image("hands2.png")
-img_phone = load_image("phone.png")
-
-try:
-    img_main_menu_bg = load_image("main_menu_bg.png")
-    main_menu_bg = scale(img_main_menu_bg, WIDTH, HEIGHT)
-    HAS_MENU_BG = True
-except Exception:
-    HAS_MENU_BG = False
-
-try:
-    img_caught_bg = load_image("caught_bg.png")
-    caught_bg = scale(img_caught_bg, WIDTH, HEIGHT)
-    HAS_CAUGHT_BG = True
-except Exception:
-    HAS_CAUGHT_BG = False
-
-desk_scale = WIDTH / img_desk.get_width()
-desk_h = int(img_desk.get_height() * desk_scale - 120)
-desk_s = pygame.transform.smoothscale(img_desk, (WIDTH, desk_h))
-DESK_POS = (0, HEIGHT - desk_h + DESK_Y_OFFSET)
-
-LAPTOP_SIZE = (520, 260)
-LAPTOP_POS = (WIDTH//2 - LAPTOP_SIZE[0]//2, HEIGHT - LAPTOP_SIZE[1] - 22)
-
-PHONE_SIZE = (300, 300)
-PHONE_POS = (
-    WIDTH//2 - PHONE_SIZE[0]//2,
-    LAPTOP_POS[1] + (LAPTOP_SIZE[1]//2 - PHONE_SIZE[1]//2) + 6
-)
-
-hands_0_s = scale(img_hands_0, *LAPTOP_SIZE)
-hands_1_s = scale(img_hands_1, *LAPTOP_SIZE)
-phone_s = scale(img_phone, *PHONE_SIZE)
-
-BOSS_FAR  = (190, 285)
-BOSS_NEAR = (190, 285)
-BOSS_END_Y = LAPTOP_POS[1] + 12
-BOSS_START_Y = BOSS_END_Y
-
-# -----------------------------
-# Load audio
-# -----------------------------
-def safe_sound(path, volume=None):
-    try:
-        s = pygame.mixer.Sound(path)
-        if volume is not None:
-            s.set_volume(volume)
-        return s
-    except Exception:
-        return pygame.mixer.Sound(b"\x00\x00\x00\x00")
-
-snd_boss_walk = safe_sound(os.path.join(ASSETS_DIR, "loud-footsteps-62038-VEED.mp3"))
-snd_typing = safe_sound(os.path.join(ASSETS_DIR, "typing-keyboard-asmr-356116.mp3"))
-snd_phone_use = safe_sound(os.path.join(ASSETS_DIR, "Mathias Vandenboer_s Video - Dec 16, 2025-VEED.mp3.mp3"))
-snd_boss_chatter = safe_sound(os.path.join(ASSETS_DIR, "angry-boss-chatter.mp3"), volume=0.5)
-snd_game_over = safe_sound(os.path.join(ASSETS_DIR, "game_over.wav"))
-snd_complete = safe_sound(os.path.join(ASSETS_DIR, "level_complete.wav"))
-snd_buy = safe_sound(os.path.join(ASSETS_DIR, "purchase-success-384963.mp3"))
-snd_menu_click = safe_sound(os.path.join(ASSETS_DIR, "menu_click.wav"))
-
-# -----------------------------
-# Save + laptop asset loader
-# -----------------------------
-save = load_save()
-
-img_laptop_nohands = None
-laptop_nohands_s = None
-
-def reload_laptop_asset():
-    global img_laptop_nohands, laptop_nohands_s
-    key = save["equipped"].get("laptop", "laptop_default")
-    if key not in SHOP_ITEMS:
-        key = "laptop_default"
-    img_laptop_nohands = load_image(SHOP_ITEMS[key]["file"])
-    laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
-
-reload_laptop_asset()
-
-# -----------------------------
-# Shop thumbnails
-# -----------------------------
-THUMB_W, THUMB_H = 180, 95
-shop_thumbs = {}
-
-def build_shop_thumbs():
-    global shop_thumbs
-    shop_thumbs = {}
-    for item_id, item in SHOP_ITEMS.items():
-        try:
-            img = load_image(item["file"])
-            shop_thumbs[item_id] = pygame.transform.smoothscale(img, (THUMB_W, THUMB_H))
-        except Exception:
-            surf = pygame.Surface((THUMB_W, THUMB_H), pygame.SRCALPHA)
-            surf.fill((200, 200, 200))
-            shop_thumbs[item_id] = surf
-
-build_shop_thumbs()
 
 # -----------------------------
 # Game state
@@ -530,15 +617,12 @@ while running:
 
     if scene != current_scene:
         stop_all_loop_sounds()
-
         if scene == SCENE_COMPLETE:
             snd_complete.play()
         elif scene == SCENE_GAMEOVER:
             snd_game_over.play()
-
         if scene == SCENE_PLAY and not play["phone"] and not play["gameover"]:
             snd_typing.play(-1)
-
         current_scene = scene
 
     click = False
@@ -643,9 +727,7 @@ while running:
                 if not play["phone"] and not play["gameover"]:
                     snd_typing.play(-1)
 
-        # -----------------------------
-        # ✅ WIN condition (zoals code 1)
-        # -----------------------------
+        # WIN condition
         if play["score"] >= STAR_3:
             last_run_score = int(play["score"])
             last_run_level = selected_level
@@ -665,9 +747,7 @@ while running:
             write_save(save)
             scene = SCENE_COMPLETE
 
-        # -----------------------------
-        # ✅ GAMEOVER rewards (zoals code 1)
-        # -----------------------------
+        # GAMEOVER rewards
         if play["gameover"]:
             last_run_score = int(play["score"])
             last_run_level = selected_level
@@ -686,7 +766,7 @@ while running:
     # DRAW
     # -----------------------------
     if scene == SCENE_MAIN_MENU:
-        if HAS_MENU_BG:
+        if HAS_MENU_BG and main_menu_bg is not None:
             screen.blit(main_menu_bg, (0, 0))
             overlay = pygame.Surface((WIDTH, HEIGHT))
             overlay.set_alpha(64)
@@ -698,43 +778,43 @@ while running:
                 for j in range(0, HEIGHT, 40):
                     pygame.draw.rect(screen, (35, 45, 60), (i, j, 40, 40), 1)
 
-        button_width = 300
-        button_height = 60
+        button_width = int(WIDTH * 0.32)
+        button_height = int(HEIGHT * 0.11)
         button_x = WIDTH//2 - button_width//2
 
-        start_rect = pygame.Rect(button_x, 180, button_width, button_height)
+        start_rect = pygame.Rect(button_x, int(HEIGHT * 0.33), button_width, button_height)
         if menu_button(start_rect, "START GAME") and click:
             start_level(save["unlocked"])
 
-        levels_rect = pygame.Rect(button_x, 260, button_width, button_height)
+        levels_rect = pygame.Rect(button_x, int(HEIGHT * 0.48), button_width, button_height)
         if menu_button(levels_rect, "LEVEL SELECT") and click:
             scene = SCENE_LEVEL_SELECT
 
-        shop_rect = pygame.Rect(button_x, 340, button_width, button_height)
+        shop_rect = pygame.Rect(button_x, int(HEIGHT * 0.63), button_width, button_height)
         if menu_button(shop_rect, "SHOP") and click:
             scene = SCENE_SHOP
             if shop_selected_id is None:
                 shop_selected_id = "laptop_default"
 
-        quit_rect = pygame.Rect(button_x, 420, button_width, button_height)
+        quit_rect = pygame.Rect(button_x, int(HEIGHT * 0.78), button_width, button_height)
         if menu_button(quit_rect, "QUIT GAME") and click:
             running = False
 
         footer_text = small.render("SPATIE = telefoon | ESC = menu", True, (0, 0, 0))
-        screen.blit(footer_text, (WIDTH//2 - footer_text.get_width()//2, HEIGHT - 40))
+        screen.blit(footer_text, (WIDTH//2 - footer_text.get_width()//2, HEIGHT - int(HEIGHT * 0.06)))
 
     elif scene == SCENE_LEVEL_SELECT:
-        pygame.draw.rect(screen, (170, 210, 240), (0, 0, WIDTH, 160))
-        pygame.draw.rect(screen, (120, 180, 230), (0, 160, WIDTH, HEIGHT-160))
+        pygame.draw.rect(screen, (170, 210, 240), (0, 0, WIDTH, int(HEIGHT * 0.30)))
+        pygame.draw.rect(screen, (120, 180, 230), (0, int(HEIGHT * 0.30), WIDTH, HEIGHT - int(HEIGHT * 0.30)))
 
-        back_rect = pygame.Rect(20, 20, 120, 40)
+        back_rect = pygame.Rect(int(WIDTH * 0.02), int(HEIGHT * 0.03), int(WIDTH * 0.12), int(HEIGHT * 0.07))
         if button(back_rect, "< Terug") and click:
             scene = SCENE_MAIN_MENU
 
-        draw_text(screen, font, f"Unlocked: {save['unlocked']} / {TOTAL_LEVELS}", 42, 95, (255, 255, 255))
-        draw_text(screen, font, f"Coins: {save['coins']}", WIDTH - 170, 95, (255, 255, 255))
+        draw_text(screen, font, f"Unlocked: {save['unlocked']} / {TOTAL_LEVELS}", int(WIDTH * 0.04), int(HEIGHT * 0.18), (255, 255, 255))
+        draw_text(screen, font, f"Coins: {save['coins']}", int(WIDTH * 0.82), int(HEIGHT * 0.18), (255, 255, 255))
 
-        shop_btn = pygame.Rect(WIDTH - 200, 30, 160, 52)
+        shop_btn = pygame.Rect(int(WIDTH * 0.79), int(HEIGHT * 0.04), int(WIDTH * 0.17), int(HEIGHT * 0.09))
         if button(shop_btn, "SHOP") and click:
             scene = SCENE_SHOP
             if shop_selected_id is None:
@@ -746,7 +826,7 @@ while running:
                 lvl_num = idx + 1
                 x = GRID_LEFT + c*TILE_W
                 y = GRID_TOP + r*TILE_H
-                rect = pygame.Rect(x+10, y+10, TILE_W-20, TILE_H-20)
+                rect = pygame.Rect(x + int(TILE_W*0.07), y + int(TILE_H*0.10), int(TILE_W*0.86), int(TILE_H*0.78))
 
                 unlocked = lvl_num <= save["unlocked"]
                 mx, my = pygame.mouse.get_pos()
@@ -760,7 +840,8 @@ while running:
                     t = font.render(str(lvl_num), True, (55, 45, 35))
                     screen.blit(t, (rect.x + 12, rect.y + 10))
 
-                    draw_star_row(rect.x + 18, rect.y + 52, save["stars"][idx], size=18, gap=6)
+                    star_size = max(12, int((HEIGHT/540) * 18))
+                    draw_star_row(rect.x + 18, rect.y + int(rect.h * 0.55), save["stars"][idx], size=star_size, gap=max(4, int(star_size*0.35)))
 
                     if click and hover:
                         start_level(lvl_num)
@@ -770,20 +851,20 @@ while running:
                     pygame.draw.rect(screen, (130, 130, 140), rect, 3, border_radius=16)
                     draw_text(screen, font, "LOCK", rect.centerx-22, rect.centery-12, (90, 90, 100))
 
-        draw_text(screen, small, "Klik op een level. (ESC = hoofdmenu)", 40, HEIGHT-40, (255, 255, 255))
+        draw_text(screen, small, "Klik op een level. (ESC = hoofdmenu)", int(WIDTH * 0.04), HEIGHT - int(HEIGHT * 0.06), (255, 255, 255))
 
     elif scene == SCENE_SHOP:
         screen.fill(COL_PANEL_BG)
 
-        draw_text(screen, big, "SHOP", 40, 18, COL_TEXT)
-        draw_text(screen, font, f"Coins: {save['coins']}", WIDTH - 200, 40, COL_TEXT)
-        draw_text(screen, small, "Klik laptop. Rechts: prijs + KOOP/EQUIP. ESC = hoofdmenu.", 40, 88, COL_TEXT)
+        draw_text(screen, big, "SHOP", int(WIDTH * 0.04), int(HEIGHT * 0.03), COL_TEXT)
+        draw_text(screen, font, f"Coins: {save['coins']}", int(WIDTH * 0.80), int(HEIGHT * 0.07), COL_TEXT)
+        draw_text(screen, small, "Klik laptop. Rechts: prijs + KOOP/EQUIP. ESC = hoofdmenu.", int(WIDTH * 0.04), int(HEIGHT * 0.16), COL_TEXT)
 
-        grid_x, grid_y = 40, 120
-        grid_w, grid_h = 620, HEIGHT - 160
-        side_x = grid_x + grid_w + 20
+        grid_x, grid_y = int(WIDTH * 0.04), int(HEIGHT * 0.22)
+        grid_w, grid_h = int(WIDTH * 0.64), int(HEIGHT * 0.70)
+        side_x = grid_x + grid_w + int(WIDTH * 0.02)
         side_y = grid_y
-        side_w = WIDTH - side_x - 40
+        side_w = WIDTH - side_x - int(WIDTH * 0.04)
 
         grid_rect = pygame.Rect(grid_x, grid_y, grid_w, grid_h)
         side_rect = pygame.Rect(side_x, side_y, side_w, grid_h)
@@ -798,12 +879,13 @@ while running:
             shop_selected_id = items[0][0]
 
         cols = 3
-        pad = 16
+        pad = int(WIDTH * 0.012)
         card_w = (grid_w - pad*(cols+1)) // cols
-        card_h = 150
+        card_h = int(HEIGHT * 0.20)
 
         mx, my = pygame.mouse.get_pos()
 
+        # ✅ Cards: thumbnail boven, tekst onder (NO overlap)
         for idx, (item_id, item) in enumerate(items):
             rr = idx // cols
             cc = idx % cols
@@ -819,13 +901,19 @@ while running:
             pygame.draw.rect(screen, bg, card, border_radius=16)
             pygame.draw.rect(screen, COL_BORDER if selected else COL_MUTED, card, 3, border_radius=16)
 
+            text_area_h = int(card_h * 0.36)
+            thumb_area = pygame.Rect(card.x, card.y, card.w, card.h - text_area_h)
+            text_area  = pygame.Rect(card.x, card.y + thumb_area.h, card.w, text_area_h)
+
             thumb = shop_thumbs.get(item_id)
             if thumb:
-                thumb_rect = thumb.get_rect(center=(card.centerx, card.y + 60))
-                screen.blit(thumb, thumb_rect)
+                blit_fit_center(screen, thumb, thumb_area, padding=10)
+
+            pygame.draw.rect(screen, (255, 255, 255), text_area, border_radius=14)
+            pygame.draw.rect(screen, COL_MUTED, text_area, 2, border_radius=14)
 
             name_s = small.render(item["name"], True, COL_TEXT)
-            screen.blit(name_s, (card.x + 10, card.y + 102))
+            screen.blit(name_s, (text_area.x + 10, text_area.y + 6))
 
             if equipped:
                 tag = "EQUIPPED"
@@ -835,11 +923,12 @@ while running:
                 tag = f"{item['price']} coins"
 
             tag_s = small.render(tag, True, COL_TEXT)
-            screen.blit(tag_s, (card.x + 10, card.y + 124))
+            screen.blit(tag_s, (text_area.x + 10, text_area.y + 6 + name_s.get_height() + 2))
 
             if click and card.collidepoint(mx, my):
                 shop_selected_id = item_id
 
+        # Right panel (selected)
         if shop_selected_id in SHOP_ITEMS:
             item = SHOP_ITEMS[shop_selected_id]
             owned = bool(save["owned"].get(shop_selected_id, False))
@@ -850,14 +939,16 @@ while running:
 
             preview = shop_thumbs.get(shop_selected_id)
             if preview:
-                big_prev = pygame.transform.smoothscale(preview, (side_w - 36, 120))
-                screen.blit(big_prev, (side_x + 18, side_y + 80))
+                prev_w = side_w - 36
+                prev_h = int(grid_h * 0.22)
+                prev_rect = pygame.Rect(side_x + 18, side_y + 80, prev_w, prev_h)
+                blit_fit_center(screen, preview, prev_rect, padding=8)
 
-            draw_text(screen, font, f"Price: {item['price']} coins", side_x + 18, side_y + 215, COL_TEXT)
+            draw_text(screen, font, f"Price: {item['price']} coins", side_x + 18, side_y + int(grid_h * 0.36), COL_TEXT)
             status = "Equipped" if equipped else ("Owned" if owned else "Not owned")
-            draw_text(screen, font, f"Status: {status}", side_x + 18, side_y + 245, COL_TEXT)
+            draw_text(screen, font, f"Status: {status}", side_x + 18, side_y + int(grid_h * 0.41), COL_TEXT)
 
-            btn = pygame.Rect(side_x + 18, side_y + 300, side_w - 36, 56)
+            btn = pygame.Rect(side_x + 18, side_y + int(grid_h * 0.52), side_w - 36, int(grid_h * 0.10))
 
             if equipped:
                 ui_button(btn, "EQUIPPED", enabled=False)
@@ -874,9 +965,9 @@ while running:
                         popup_timer = POPUP_DURATION
 
         if popup_timer > 0 and popup_text:
-            w, h = 520, 70
+            w, h = int(WIDTH * 0.54), int(HEIGHT * 0.12)
             px = (WIDTH - w) // 2
-            py = 20
+            py = int(HEIGHT * 0.03)
             rect = pygame.Rect(px, py, w, h)
             pygame.draw.rect(screen, (255, 255, 255), rect, border_radius=16)
             pygame.draw.rect(screen, COL_BORDER, rect, 3, border_radius=16)
@@ -896,10 +987,10 @@ while running:
             else:
                 t = 1.0
 
-            sx, sy = play["boss_start"]
-            ex, ey = play["boss_end"]
-            bx = int(sx + (ex - sx) * t)
-            by = int(sy + (ey - sy) * t)
+            sx0, sy0 = play["boss_start"]
+            ex0, ey0 = play["boss_end"]
+            bx = int(sx0 + (ex0 - sx0) * t)
+            by = int(sy0 + (ey0 - sy0) * t)
 
             bw = int(BOSS_FAR[0] + (BOSS_NEAR[0] - BOSS_FAR[0]) * t)
             bh = int(BOSS_FAR[1] + (BOSS_NEAR[1] - BOSS_FAR[1]) * t)
@@ -912,7 +1003,7 @@ while running:
         screen.blit(desk_s, DESK_POS)
         screen.blit(laptop_nohands_s, LAPTOP_POS)
 
-        hands_pos = (LAPTOP_POS[0], LAPTOP_POS[1] + HANDS_Y_OFFSET)
+        hands_pos = (LAPTOP_POS[0], LAPTOP_POS[1] + int(HANDS_Y_OFFSET * (HEIGHT/540)))
         if play["phone"]:
             screen.blit(phone_s, PHONE_POS)
         else:
@@ -920,46 +1011,48 @@ while running:
 
         draw_text(screen, font,
                   f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
-                  16, 14, (0, 0, 0))
+                  int(WIDTH*0.02), int(HEIGHT*0.02), (0, 0, 0))
         draw_text(screen, small, "Houd SPATIE = telefoon | ESC = hoofdmenu",
-                  16, 44, (0, 0, 0))
+                  int(WIDTH*0.02), int(HEIGHT*0.07), (0, 0, 0))
 
         if play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - play["reaction_timer"])
-            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", 16, 72, (204, 0, 0))
+            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", int(WIDTH*0.02), int(HEIGHT*0.12), (204, 0, 0))
         elif play["boss_state"] == LOOKING:
-            draw_text(screen, font, "BAAS KIJKT!", 16, 72, (204, 0, 0))
+            draw_text(screen, font, "BAAS KIJKT!", int(WIDTH*0.02), int(HEIGHT*0.12), (204, 0, 0))
 
         pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
-        bar = pygame.Rect(16, 110, 260, 18)
+        bar = pygame.Rect(int(WIDTH*0.02), int(HEIGHT*0.20), int(WIDTH*0.27), int(HEIGHT*0.03))
         pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
         pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
-        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", 16, 132, (0, 0, 0))
+        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", int(WIDTH*0.02), int(HEIGHT*0.25), (0, 0, 0))
 
         if play["phone"]:
             combo_curve_exponent = 0.5
             raw_bonus = 1.0 + (play["phone_hold_time"] ** combo_curve_exponent)
             hold_bonus = min(raw_bonus, MAX_HOLD_BONUS)
 
-            bar_w = 20
-            bar_h = 120
-            bar_x = WIDTH - bar_w - 20
-            bar_y = HEIGHT - bar_h - 20
+            bar_w = int(WIDTH*0.02)
+            bar_h = int(HEIGHT*0.22)
+            bar_x = WIDTH - bar_w - int(WIDTH*0.02)
+            bar_y = HEIGHT - bar_h - int(HEIGHT*0.04)
 
             pygame.draw.rect(screen, (100, 100, 100), (bar_x, bar_y, bar_w, bar_h), border_radius=6)
             fill_h = int(bar_h * (hold_bonus / MAX_HOLD_BONUS))
             pygame.draw.rect(screen, (255, 200, 50), (bar_x, bar_y + bar_h - fill_h, bar_w, fill_h), border_radius=6)
             pygame.draw.rect(screen, (50, 50, 50), (bar_x, bar_y, bar_w, bar_h), 2, border_radius=6)
-            draw_text(screen, small, f"x{hold_bonus:.2f}", bar_x - 10, bar_y - 24, (204, 0, 0))
+            draw_text(screen, small, f"x{hold_bonus:.2f}", bar_x - int(WIDTH*0.03), bar_y - int(HEIGHT*0.04), (204, 0, 0))
 
     elif scene == SCENE_COMPLETE:
         screen.fill((170, 230, 190))
-        draw_text(screen, big, "LEVEL COMPLETE!", 60, 70, (25, 60, 35))
-        draw_text(screen, font, f"Level {last_run_level}  Score: {last_run_score}", 65, 165, (25, 60, 35))
-        draw_star_row(70, 210, last_run_stars, size=34, gap=16)
+        draw_text(screen, big, "LEVEL COMPLETE!", int(WIDTH*0.06), int(HEIGHT*0.12), (25, 60, 35))
+        draw_text(screen, font, f"Level {last_run_level}  Score: {last_run_score}", int(WIDTH*0.07), int(HEIGHT*0.30), (25, 60, 35))
 
-        b1 = pygame.Rect(60, 300, 300, 60)
-        b2 = pygame.Rect(60, 370, 300, 60)
+        star_size = max(18, int((HEIGHT/540) * 34))
+        draw_star_row(int(WIDTH*0.07), int(HEIGHT*0.39), last_run_stars, size=star_size, gap=int(star_size*0.5))
+
+        b1 = pygame.Rect(int(WIDTH*0.06), int(HEIGHT*0.56), int(WIDTH*0.30), int(HEIGHT*0.11))
+        b2 = pygame.Rect(int(WIDTH*0.06), int(HEIGHT*0.69), int(WIDTH*0.30), int(HEIGHT*0.11))
 
         if button(b1, "Hoofdmenu") and click:
             scene = SCENE_MAIN_MENU
@@ -972,7 +1065,7 @@ while running:
             button(b2, "Laatste level!", enabled=False)
 
     elif scene == SCENE_GAMEOVER:
-        if HAS_CAUGHT_BG:
+        if HAS_CAUGHT_BG and caught_bg is not None:
             screen.blit(caught_bg, (0, 0))
             overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 70))
@@ -980,19 +1073,19 @@ while running:
         else:
             screen.fill((25, 25, 25))
 
-        bw, bh = 320, 62
+        bw, bh = int(WIDTH*0.33), int(HEIGHT*0.12)
         bx = WIDTH // 2 - bw // 2
 
-        retry_rect = pygame.Rect(bx, 360, bw, bh)
+        retry_rect = pygame.Rect(bx, int(HEIGHT*0.66), bw, bh)
         if menu_button(retry_rect, "RETRY") and click:
             start_level(last_run_level)
 
-        back_rect = pygame.Rect(bx, 435, bw, bh)
+        back_rect = pygame.Rect(bx, int(HEIGHT*0.80), bw, bh)
         if menu_button(back_rect, "TERUG NAAR LEVELS") and click:
             scene = SCENE_LEVEL_SELECT
 
         hint = small.render("ESC = hoofdmenu", True, (255, 255, 255))
-        screen.blit(hint, (WIDTH//2 - hint.get_width()//2, HEIGHT - 30))
+        screen.blit(hint, (WIDTH//2 - hint.get_width()//2, HEIGHT - int(HEIGHT*0.06)))
 
     pygame.display.flip()
 
