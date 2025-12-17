@@ -3,9 +3,7 @@ import json
 import random
 import pygame
 
-# -----------------------------
 # Config
-# -----------------------------
 FPS = 60
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
@@ -30,9 +28,7 @@ DESK_Y_OFFSET = 0
 # Hands overlay tuning
 HANDS_Y_OFFSET = 6
 
-# -----------------------------
 # Coins rewards
-# -----------------------------
 COINS_BASE_WIN = 50
 COINS_PER_STAR = 10
 COINS_FIRST_CLEAR_BONUS = 100
@@ -40,17 +36,13 @@ COINS_FIRST_CLEAR_BONUS = 100
 # Popup
 POPUP_DURATION = 1.4  # sec
 
-# -----------------------------
 # Main menu settings
-# -----------------------------
 MAIN_MENU_BG_COLOR = (45, 55, 70)      # fallback
 BUTTON_BG_COLOR = (109, 52, 18)        # donker bruin
 BUTTON_TEXT_COLOR = (253, 221, 131)    # licht goud
 TITLE_COLOR = (255, 230, 180)
 
-# -----------------------------
 # Shop colors
-# -----------------------------
 COL_TEXT = (109, 52, 18)           # text
 COL_BTN_BG = (253, 221, 131)       # knop background
 COL_PANEL_BG = (248, 236, 200)
@@ -59,7 +51,7 @@ COL_BORDER   = (109, 52, 18)
 COL_MUTED    = (170, 150, 120)
 
 # -----------------------------
-# Shop catalog (TELEFOONS + LAPTOPS)
+# Shop catalog (ALLEEN laptops)
 # -----------------------------
 SHOP_ITEMS = {
     # --- Laptops ---
@@ -74,9 +66,7 @@ SHOP_ITEMS = {
     "kity_phone":    {"type": "phone",  "price": 250, "file": "kity_phone.png",     "name": "Kity Phone"},
 }
 
-# -----------------------------
 # Difficulty generator
-# -----------------------------
 def make_level_params(i: int):
     lvl = i + 1
 
@@ -108,9 +98,7 @@ SCENE_COMPLETE     = "complete"
 SCENE_GAMEOVER     = "gameover"
 SCENE_SHOP         = "shop"
 
-# -----------------------------
 # Utils
-# -----------------------------
 def load_image(filename: str) -> pygame.Surface:
     path = os.path.join(ASSETS_DIR, filename)
     if not os.path.exists(path):
@@ -140,7 +128,7 @@ def blit_fit_center(surf, img, rect, padding=8):
     surf.blit(scaled, dst)
 
 # -----------------------------
-# Save (coins + shop)
+# Save (coins + laptop shop)
 # -----------------------------
 DEFAULT_SAVE = {
     "unlocked": 1,
@@ -208,9 +196,7 @@ def write_save(data):
     except Exception:
         pass
 
-# -----------------------------
 # Init pygame + dynamic fullscreen resolution
-# -----------------------------
 pygame.init()
 pygame.mixer.init()
 
@@ -232,9 +218,7 @@ def setup_fonts():
 
 setup_fonts()
 
-# -----------------------------
 # Load visuals (raw)
-# -----------------------------
 img_background = load_image("Background.png")
 img_desk = load_image("desk.png")
 
@@ -266,9 +250,7 @@ except Exception:
     HAS_CAUGHT_BG = False
     img_caught_bg = None
 
-# -----------------------------
 # Globals die door layout bepaald worden
-# -----------------------------
 background_s = None
 main_menu_bg = None
 caught_bg = None
@@ -388,9 +370,7 @@ def build_shop_thumbs():
 recalc_layout()
 build_shop_thumbs()
 
-# -----------------------------
 # Load audio
-# -----------------------------
 def safe_sound(path, volume=None):
     try:
         s = pygame.mixer.Sound(path)
@@ -410,7 +390,7 @@ snd_buy = safe_sound(os.path.join(ASSETS_DIR, "purchase-success-384963.mp3"))
 snd_menu_click = safe_sound(os.path.join(ASSETS_DIR, "menu_click.wav"))
 
 # -----------------------------
-# Save + asset loaders
+# Save + laptop asset loader
 # -----------------------------
 save = load_save()
 
@@ -443,9 +423,7 @@ def reload_phone_asset():
 reload_laptop_asset()
 reload_phone_asset()
 
-# -----------------------------
 # UI helpers
-# -----------------------------
 def draw_star_row(x, y, n, size=18, gap=8):
     for i in range(3):
         cx = x + i*(size+gap) + size//2
@@ -510,17 +488,8 @@ def menu_button(rect, text, enabled=True):
     screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
     return hover and enabled
 
-def tab_button(rect, text, active):
-    bg = (255, 245, 210) if active else (255, 255, 255)
-    pygame.draw.rect(screen, bg, rect, border_radius=14)
-    pygame.draw.rect(screen, COL_BORDER, rect, 3, border_radius=14)
-    t = font.render(text, True, COL_TEXT)
-    screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
-    return rect.collidepoint(pygame.mouse.get_pos())
-
 # -----------------------------
 # Game helpers
-# -----------------------------
 def schedule_next_check(play_state, params):
     BOSS_SOUND_START_OFFSET = 0.5
     play_state["next_check_in"] = random.uniform(params["min_wait"], params["max_wait"]) - BOSS_SOUND_START_OFFSET
@@ -558,52 +527,8 @@ def set_boss_path(play_state, direction="in"):
         play_state["boss_start"] = (start_x, BOSS_START_Y)
         play_state["boss_end"] = (end_x, BOSS_END_Y)
 
-def buy_or_equip(item_id: str):
-    global popup_text, popup_timer
-
-    if item_id not in SHOP_ITEMS:
-        return
-
-    item = SHOP_ITEMS[item_id]
-    item_type = item["type"]  # "laptop" of "phone"
-    slot_key = "laptop" if item_type == "laptop" else "phone"
-
-    owned = bool(save["owned"].get(item_id, False))
-    equipped = (save["equipped"].get(slot_key) == item_id)
-
-    if equipped:
-        popup_text = "Dit is al equipped!"
-        popup_timer = POPUP_DURATION
-        return
-
-    if not owned:
-        price = int(item["price"])
-        if save["coins"] < price:
-            popup_text = "Niet genoeg coins!"
-            popup_timer = POPUP_DURATION
-            return
-
-        save["coins"] -= price
-        save["owned"][item_id] = True
-        snd_buy.play()
-        popup_text = f"Gekocht: {item['name']}!"
-        popup_timer = POPUP_DURATION
-    else:
-        snd_buy.play()
-        popup_text = f"Equipped: {item['name']}!"
-        popup_timer = POPUP_DURATION
-
-    save["equipped"][slot_key] = item_id
-    write_save(save)
-
-    if item_type == "laptop":
-        reload_laptop_asset()
-    else:
-        reload_phone_asset()
-
 # -----------------------------
 # Game state
-# -----------------------------
 scene = SCENE_MAIN_MENU
 selected_level = 1
 last_run_score = 0
@@ -684,9 +609,44 @@ def start_level(level_num: int):
     scene = SCENE_PLAY
     snd_typing.play(-1)
 
+def buy_or_equip(item_id: str):
+    global popup_text, popup_timer
+
+    if item_id not in SHOP_ITEMS:
+        return
+
+    item = SHOP_ITEMS[item_id]
+    owned = bool(save["owned"].get(item_id, False))
+    equipped = (save["equipped"].get("laptop") == item_id)
+
+    if equipped:
+        popup_text = "Dit is al equipped!"
+        popup_timer = POPUP_DURATION
+        return
+
+    if not owned:
+        price = int(item["price"])
+        if save["coins"] < price:
+            popup_text = "Niet genoeg coins!"
+            popup_timer = POPUP_DURATION
+            return
+
+        save["coins"] -= price
+        save["owned"][item_id] = True
+        snd_buy.play()
+        popup_text = f"Gekocht: {item['name']}!"
+        popup_timer = POPUP_DURATION
+    else:
+        snd_buy.play()
+        popup_text = f"Equipped: {item['name']}!"
+        popup_timer = POPUP_DURATION
+
+    save["equipped"]["laptop"] = item_id
+    write_save(save)
+    reload_laptop_asset()
+
 # -----------------------------
 # Main loop
-# -----------------------------
 running = True
 while running:
     dt = clock.tick(FPS) / 1000.0
@@ -888,9 +848,9 @@ while running:
             write_save(save)
             scene = SCENE_GAMEOVER
 
-    # -----------------------------
+
     # DRAW
-    # -----------------------------
+
     if scene == SCENE_MAIN_MENU:
         if HAS_MENU_BG and main_menu_bg is not None:
             screen.blit(main_menu_bg, (0, 0))
