@@ -26,6 +26,6 @@
     "roze_laptop": true
   },
   "equipped": {
-    "laptop": "laptop_default"
+    "laptop": "roze_laptop"
   }
 }
