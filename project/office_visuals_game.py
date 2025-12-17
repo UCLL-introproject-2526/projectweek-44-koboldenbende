@@ -525,7 +525,7 @@ while running:
         # UI top
         draw_text(screen, font,
                   f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
-                  16, 14, (255, 255, 255))
+                  16, 14, (0, 0, 0))
         draw_text(screen, small, "Houd SPATIE = telefoon | ESC = level menu",
                   16, 44, (0, 0, 0))
 
