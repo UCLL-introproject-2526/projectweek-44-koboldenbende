@@ -59,13 +59,19 @@ COL_BORDER   = (109, 52, 18)
 COL_MUTED    = (170, 150, 120)
 
 # -----------------------------
-# Shop catalog (ALLEEN laptops)
+# Shop catalog (TELEFOONS + LAPTOPS)
 # -----------------------------
 SHOP_ITEMS = {
-    "laptop_default": {"type": "laptop", "price": 0,   "file": "laptopnohands.png", "name": "Laptop Default"},
-    "laptop_gaming":  {"type": "laptop", "price": 150, "file": "gaminglaptop.png",  "name": "Gaming Laptop"},
-    "roze_laptop":    {"type": "laptop", "price": 250, "file": "rozelaptop.png",    "name": "Roze Laptop"},
-    "future_gaming":  {"type": "laptop", "price": 300, "file": "futurlaptop.png",   "name": "Future Laptop"},
+    # --- Laptops ---
+    "laptop_default": {"type": "laptop", "price": 0,   "file": "laptopnohands.png",   "name": "Laptop Default"},
+    "laptop_gaming":  {"type": "laptop", "price": 400, "file": "gaminglaptop.png",    "name": "Gaming Laptop"},
+    "kity_laptop":    {"type": "laptop", "price": 550, "file": "hellokitylaptop.png", "name": "Hello kity Laptop"},
+    "roze_laptop":    {"type": "laptop", "price": 700, "file": "rozelaptop.png",      "name": "Roze Laptop"},
+    "future_gaming":  {"type": "laptop", "price": 900, "file": "futurlaptop.png",     "name": "Future Laptop"},
+
+    # --- Telefoons ---
+    "phone_default":  {"type": "phone",  "price": 0,   "file": "phone.png",           "name": "Phone Default"},
+    "kity_phone":    {"type": "phone",  "price": 250, "file": "kity_phone.png",     "name": "Kity Phone"},
 }
 
 # -----------------------------
@@ -134,7 +140,7 @@ def blit_fit_center(surf, img, rect, padding=8):
     surf.blit(scaled, dst)
 
 # -----------------------------
-# Save (coins + laptop shop)
+# Save (coins + shop)
 # -----------------------------
 DEFAULT_SAVE = {
     "unlocked": 1,
@@ -142,9 +148,11 @@ DEFAULT_SAVE = {
     "coins": 0,
     "owned": {
         "laptop_default": True,
+        "phone_default": True,
     },
     "equipped": {
         "laptop": "laptop_default",
+        "phone": "phone_default",
     }
 }
 
@@ -173,12 +181,21 @@ def load_save():
         if "equipped" not in data or not isinstance(data["equipped"], dict):
             data["equipped"] = _deepcopy_json(DEFAULT_SAVE["equipped"])
 
+        # defaults altijd owned
         data["owned"]["laptop_default"] = True
+        data["owned"]["phone_default"] = True
 
+        # equipped laptop
         if "laptop" not in data["equipped"]:
             data["equipped"]["laptop"] = "laptop_default"
         if data["equipped"]["laptop"] not in SHOP_ITEMS:
             data["equipped"]["laptop"] = "laptop_default"
+
+        # equipped phone
+        if "phone" not in data["equipped"]:
+            data["equipped"]["phone"] = "phone_default"
+        if data["equipped"]["phone"] not in SHOP_ITEMS:
+            data["equipped"]["phone"] = "phone_default"
 
         return data
     except Exception:
@@ -228,19 +245,26 @@ img_boss_3 = load_image("boss_lvl3.png")
 
 img_hands_0 = load_image("hands1.png")
 img_hands_1 = load_image("hands2.png")
-img_phone = load_image("phone.png")
+
+# ✅ smoking hand (uit code 1)
+img_smoking_hand = load_image("Smoking.png")
+
+# Default phone img (fallback)
+img_phone_default = load_image("phone.png")
 
 try:
     img_main_menu_bg = load_image("main_menu_bg.png")
     HAS_MENU_BG = True
 except Exception:
     HAS_MENU_BG = False
+    img_main_menu_bg = None
 
 try:
     img_caught_bg = load_image("caught_bg.png")
     HAS_CAUGHT_BG = True
 except Exception:
     HAS_CAUGHT_BG = False
+    img_caught_bg = None
 
 # -----------------------------
 # Globals die door layout bepaald worden
@@ -267,15 +291,21 @@ PHONE_POS = (0, 0)
 
 hands_0_s = None
 hands_1_s = None
-phone_s = None
 
-# Boss sizing (wordt berekend)
+# ✅ smoking hand scaled
+smoking_hand_s = None
+
+# phone skin (equipped)
+img_phone_skin = None
+phone_skin_s = None
+
+# Boss sizing
 BOSS_FAR = (190, 285)
 BOSS_NEAR = (190, 285)
 BOSS_END_Y = 0
 BOSS_START_Y = 0
 
-# Shop thumbs (wordt berekend)
+# Shop thumbs
 THUMB_W, THUMB_H = 180, 95
 shop_thumbs = {}
 
@@ -284,8 +314,9 @@ def recalc_layout():
     global GRID_LEFT, GRID_TOP, TILE_W, TILE_H
     global DESK_POS, desk_scale, desk_h, desk_s
     global LAPTOP_SIZE, LAPTOP_POS
-    global PHONE_SIZE, PHONE_POS, phone_s
+    global PHONE_SIZE, PHONE_POS, phone_skin_s
     global hands_0_s, hands_1_s
+    global smoking_hand_s
     global BOSS_END_Y, BOSS_START_Y
     global BOSS_FAR, BOSS_NEAR
     global THUMB_W, THUMB_H
@@ -293,33 +324,28 @@ def recalc_layout():
     sx = WIDTH / 960
     sy = HEIGHT / 540
 
-    # Background fullscreen
     background_s = scale(img_background, WIDTH, HEIGHT)
 
-    if HAS_MENU_BG:
+    if HAS_MENU_BG and img_main_menu_bg is not None:
         main_menu_bg = scale(img_main_menu_bg, WIDTH, HEIGHT)
-    if HAS_CAUGHT_BG:
+    if HAS_CAUGHT_BG and img_caught_bg is not None:
         caught_bg = scale(img_caught_bg, WIDTH, HEIGHT)
 
-    # Level select grid
     TILE_W = int(140 * sx)
     TILE_H = int(110 * sy)
     GRID_TOP = int(140 * sy)
     GRID_LEFT = (WIDTH - GRID_COLS * TILE_W) // 2
 
-    # Desk
     desk_scale = WIDTH / img_desk.get_width()
     desk_h = int(img_desk.get_height() * desk_scale - 120 * sy)
     desk_s = pygame.transform.smoothscale(img_desk, (WIDTH, desk_h))
     DESK_POS = (0, HEIGHT - desk_h + int(DESK_Y_OFFSET * sy))
 
-    # Laptop (relatief t.o.v. schermbreedte)
     laptop_w = int(WIDTH * 0.54)
     laptop_h = int(laptop_w * (260 / 520))
     LAPTOP_SIZE = (laptop_w, laptop_h)
     LAPTOP_POS = (WIDTH // 2 - laptop_w // 2, HEIGHT - laptop_h - int(22 * sy))
 
-    # Phone
     phone_w = int(laptop_w * (300 / 520))
     phone_h = phone_w
     PHONE_SIZE = (phone_w, phone_h)
@@ -328,20 +354,23 @@ def recalc_layout():
         LAPTOP_POS[1] + (laptop_h // 2 - phone_h // 2) + int(6 * sy)
     )
 
-    # Hands + phone scaled
     hands_0_s = scale(img_hands_0, *LAPTOP_SIZE)
     hands_1_s = scale(img_hands_1, *LAPTOP_SIZE)
-    phone_s = scale(img_phone, *PHONE_SIZE)
 
-    # Boss sizes
+    # ✅ smoking hand scale mee
+    smoking_hand_s = scale(img_smoking_hand, *LAPTOP_SIZE)
+
     BOSS_FAR = (int(190 * sx), int(285 * sy))
     BOSS_NEAR = (int(190 * sx), int(285 * sy))
     BOSS_END_Y = LAPTOP_POS[1] + int(12 * sy)
     BOSS_START_Y = BOSS_END_Y
 
-    # Shop thumbs mee schalen
     THUMB_W = int(180 * sx)
     THUMB_H = int(95 * sy)
+
+    # phone skin opnieuw schalen na resize
+    if img_phone_skin is not None:
+        phone_skin_s = scale(img_phone_skin, *PHONE_SIZE)
 
 def build_shop_thumbs():
     global shop_thumbs
@@ -381,7 +410,7 @@ snd_buy = safe_sound(os.path.join(ASSETS_DIR, "purchase-success-384963.mp3"))
 snd_menu_click = safe_sound(os.path.join(ASSETS_DIR, "menu_click.wav"))
 
 # -----------------------------
-# Save + laptop asset loader
+# Save + asset loaders
 # -----------------------------
 save = load_save()
 
@@ -393,10 +422,26 @@ def reload_laptop_asset():
     key = save["equipped"].get("laptop", "laptop_default")
     if key not in SHOP_ITEMS:
         key = "laptop_default"
+    if SHOP_ITEMS[key]["type"] != "laptop":
+        key = "laptop_default"
     img_laptop_nohands = load_image(SHOP_ITEMS[key]["file"])
     laptop_nohands_s = scale(img_laptop_nohands, *LAPTOP_SIZE)
 
+def reload_phone_asset():
+    global img_phone_skin, phone_skin_s
+    key = save["equipped"].get("phone", "phone_default")
+    if key not in SHOP_ITEMS:
+        key = "phone_default"
+    if SHOP_ITEMS[key]["type"] != "phone":
+        key = "phone_default"
+    try:
+        img_phone_skin = load_image(SHOP_ITEMS[key]["file"])
+    except Exception:
+        img_phone_skin = img_phone_default
+    phone_skin_s = scale(img_phone_skin, *PHONE_SIZE)
+
 reload_laptop_asset()
+reload_phone_asset()
 
 # -----------------------------
 # UI helpers
@@ -465,6 +510,14 @@ def menu_button(rect, text, enabled=True):
     screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
     return hover and enabled
 
+def tab_button(rect, text, active):
+    bg = (255, 245, 210) if active else (255, 255, 255)
+    pygame.draw.rect(screen, bg, rect, border_radius=14)
+    pygame.draw.rect(screen, COL_BORDER, rect, 3, border_radius=14)
+    t = font.render(text, True, COL_TEXT)
+    screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
+    return rect.collidepoint(pygame.mouse.get_pos())
+
 # -----------------------------
 # Game helpers
 # -----------------------------
@@ -505,6 +558,49 @@ def set_boss_path(play_state, direction="in"):
         play_state["boss_start"] = (start_x, BOSS_START_Y)
         play_state["boss_end"] = (end_x, BOSS_END_Y)
 
+def buy_or_equip(item_id: str):
+    global popup_text, popup_timer
+
+    if item_id not in SHOP_ITEMS:
+        return
+
+    item = SHOP_ITEMS[item_id]
+    item_type = item["type"]  # "laptop" of "phone"
+    slot_key = "laptop" if item_type == "laptop" else "phone"
+
+    owned = bool(save["owned"].get(item_id, False))
+    equipped = (save["equipped"].get(slot_key) == item_id)
+
+    if equipped:
+        popup_text = "Dit is al equipped!"
+        popup_timer = POPUP_DURATION
+        return
+
+    if not owned:
+        price = int(item["price"])
+        if save["coins"] < price:
+            popup_text = "Niet genoeg coins!"
+            popup_timer = POPUP_DURATION
+            return
+
+        save["coins"] -= price
+        save["owned"][item_id] = True
+        snd_buy.play()
+        popup_text = f"Gekocht: {item['name']}!"
+        popup_timer = POPUP_DURATION
+    else:
+        snd_buy.play()
+        popup_text = f"Equipped: {item['name']}!"
+        popup_timer = POPUP_DURATION
+
+    save["equipped"][slot_key] = item_id
+    write_save(save)
+
+    if item_type == "laptop":
+        reload_laptop_asset()
+    else:
+        reload_phone_asset()
+
 # -----------------------------
 # Game state
 # -----------------------------
@@ -516,6 +612,7 @@ last_run_stars = 0
 current_scene = None
 
 shop_selected_id = None
+shop_tab = "phone"   # "phone" of "laptop"
 popup_text = ""
 popup_timer = 0.0
 
@@ -535,6 +632,15 @@ play = {
     "hands_anim_t": 0.0,
     "hands_anim_frame": 0,
     "pre_walk_sound_started": False,
+
+    # ✅ smoking/high effect (uit code 1)
+    "smoking": False,
+    "smoking_timer": 0.0,
+    "high_timer": 0.0,
+    "shake_x": 0,
+    "shake_y": 0,
+    "hallucination_color": (0, 255, 0),
+    "hallucination_timer": 0.0,
 }
 
 def stop_all_loop_sounds():
@@ -563,47 +669,20 @@ def start_level(level_num: int):
     play["hands_anim_frame"] = 0
     play["pre_walk_sound_started"] = False
 
+    # ✅ reset smoking/high effect
+    play["smoking"] = False
+    play["smoking_timer"] = 0.0
+    play["high_timer"] = 0.0
+    play["shake_x"] = 0
+    play["shake_y"] = 0
+    play["hallucination_color"] = (0, 255, 0)
+    play["hallucination_timer"] = 0.0
+
     stop_all_loop_sounds()
     schedule_next_check(play, params)
 
     scene = SCENE_PLAY
     snd_typing.play(-1)
-
-def buy_or_equip(item_id: str):
-    global popup_text, popup_timer
-
-    if item_id not in SHOP_ITEMS:
-        return
-
-    item = SHOP_ITEMS[item_id]
-    owned = bool(save["owned"].get(item_id, False))
-    equipped = (save["equipped"].get("laptop") == item_id)
-
-    if equipped:
-        popup_text = "Dit is al equipped!"
-        popup_timer = POPUP_DURATION
-        return
-
-    if not owned:
-        price = int(item["price"])
-        if save["coins"] < price:
-            popup_text = "Niet genoeg coins!"
-            popup_timer = POPUP_DURATION
-            return
-
-        save["coins"] -= price
-        save["owned"][item_id] = True
-        snd_buy.play()
-        popup_text = f"Gekocht: {item['name']}!"
-        popup_timer = POPUP_DURATION
-    else:
-        snd_buy.play()
-        popup_text = f"Equipped: {item['name']}!"
-        popup_timer = POPUP_DURATION
-
-    save["equipped"]["laptop"] = item_id
-    write_save(save)
-    reload_laptop_asset()
 
 # -----------------------------
 # Main loop
@@ -621,7 +700,7 @@ while running:
             snd_complete.play()
         elif scene == SCENE_GAMEOVER:
             snd_game_over.play()
-        if scene == SCENE_PLAY and not play["phone"] and not play["gameover"]:
+        if scene == SCENE_PLAY and not play["phone"] and not play["smoking"] and not play["gameover"]:
             snd_typing.play(-1)
         current_scene = scene
 
@@ -648,6 +727,11 @@ while running:
                     snd_typing.stop()
                     snd_phone_use.play(-1)
 
+                # ✅ roken starten (zoals code 1)
+                if event.key == pygame.K_c and not play["gameover"] and not play["phone"]:
+                    play["smoking"] = True
+                    snd_typing.stop()
+
             if event.key == pygame.K_r and scene in (SCENE_GAMEOVER, SCENE_COMPLETE):
                 scene = SCENE_MAIN_MENU
 
@@ -655,6 +739,12 @@ while running:
             if scene == SCENE_PLAY and event.key == pygame.K_SPACE:
                 play["phone"] = False
                 snd_phone_use.stop()
+                if not play["gameover"] and not play["smoking"]:
+                    snd_typing.play(-1)
+
+            # ✅ roken stoppen (zoals code 1)
+            if scene == SCENE_PLAY and event.key == pygame.K_c:
+                play["smoking"] = False
                 if not play["gameover"]:
                     snd_typing.play(-1)
 
@@ -662,7 +752,8 @@ while running:
     if scene == SCENE_PLAY and not play["gameover"]:
         params = make_level_params(selected_level - 1)
 
-        if not play["phone"]:
+        # hands anim (stop tijdens phone of smoking)
+        if not play["phone"] and not play["smoking"]:
             play["hands_anim_t"] += dt
             if play["hands_anim_t"] >= 0.15:
                 play["hands_anim_t"] -= 0.15
@@ -671,14 +762,47 @@ while running:
             play["hands_anim_t"] = 0.0
             play["hands_anim_frame"] = 0
 
+        # scoring + combo (+ high bonus)
         if play["phone"]:
             play["phone_hold_time"] += dt
             combo_curve_exponent = 0.5
             raw_bonus = 1.0 + (play["phone_hold_time"] ** combo_curve_exponent)
             hold_bonus = min(raw_bonus, MAX_HOLD_BONUS)
-            play["score"] += PHONE_POINTS_PER_SEC * hold_bonus * params["mult"] * dt
+            high_bonus = 1.2 if play["high_timer"] > 0 else 1.0
+            play["score"] += PHONE_POINTS_PER_SEC * hold_bonus * params["mult"] * high_bonus * dt
         else:
             play["phone_hold_time"] = 0.0
+
+        # ✅ smoking logic (uit code 1)
+        if play["smoking"]:
+            play["smoking_timer"] += dt
+            if play["smoking_timer"] >= 5.0:
+                play["smoking"] = False
+                play["high_timer"] = 15.0
+                popup_text = "Joint smoked! You're high!"
+                popup_timer = POPUP_DURATION
+        else:
+            play["smoking_timer"] = 0.0
+
+        # ✅ high timer countdown + shake + hallucination color
+        if play["high_timer"] > 0:
+            play["high_timer"] -= dt
+            play["shake_x"] = random.randint(-15, 15)
+            play["shake_y"] = random.randint(-15, 15)
+
+            play["hallucination_timer"] += dt
+            if play["hallucination_timer"] >= 1.0:
+                play["hallucination_timer"] -= 1.0
+                play["hallucination_color"] = (
+                    random.randint(0, 255),
+                    random.randint(0, 255),
+                    random.randint(0, 255),
+                )
+        else:
+            play["shake_x"] = 0
+            play["shake_y"] = 0
+            play["hallucination_color"] = (0, 255, 0)
+            play["hallucination_timer"] = 0.0
 
         play["boss_timer"] += dt
 
@@ -696,7 +820,8 @@ while running:
 
         elif play["boss_state"] == WALKING_IN:
             play["reaction_timer"] += dt
-            if play["phone"] and play["reaction_timer"] > params["grace"]:
+            # ✅ catch ook bij roken
+            if (play["phone"] or play["smoking"]) and play["reaction_timer"] > params["grace"]:
                 play["caught"] = True
                 play["gameover"] = True
 
@@ -707,7 +832,8 @@ while running:
                 snd_boss_chatter.play(-1)
 
         elif play["boss_state"] == LOOKING:
-            if play["phone"]:
+            # ✅ catch ook bij roken
+            if play["phone"] or play["smoking"]:
                 play["caught"] = True
                 play["gameover"] = True
 
@@ -724,7 +850,7 @@ while running:
                 play["boss_timer"] = 0.0
                 snd_boss_walk.stop()
                 schedule_next_check(play, params)
-                if not play["phone"] and not play["gameover"]:
+                if not play["phone"] and not play["smoking"] and not play["gameover"]:
                     snd_typing.play(-1)
 
         # WIN condition
@@ -793,8 +919,10 @@ while running:
         shop_rect = pygame.Rect(button_x, int(HEIGHT * 0.63), button_width, button_height)
         if menu_button(shop_rect, "SHOP") and click:
             scene = SCENE_SHOP
-            if shop_selected_id is None:
-                shop_selected_id = "laptop_default"
+            if shop_tab == "phone":
+                shop_selected_id = save["equipped"].get("phone", "phone_default")
+            else:
+                shop_selected_id = save["equipped"].get("laptop", "laptop_default")
 
         quit_rect = pygame.Rect(button_x, int(HEIGHT * 0.78), button_width, button_height)
         if menu_button(quit_rect, "QUIT GAME") and click:
@@ -817,8 +945,10 @@ while running:
         shop_btn = pygame.Rect(int(WIDTH * 0.79), int(HEIGHT * 0.04), int(WIDTH * 0.17), int(HEIGHT * 0.09))
         if button(shop_btn, "SHOP") and click:
             scene = SCENE_SHOP
-            if shop_selected_id is None:
-                shop_selected_id = "laptop_default"
+            if shop_tab == "phone":
+                shop_selected_id = save["equipped"].get("phone", "phone_default")
+            else:
+                shop_selected_id = save["equipped"].get("laptop", "laptop_default")
 
         for r in range(GRID_ROWS):
             for c in range(GRID_COLS):
@@ -856,27 +986,66 @@ while running:
     elif scene == SCENE_SHOP:
         screen.fill(COL_PANEL_BG)
 
-        draw_text(screen, big, "SHOP", int(WIDTH * 0.04), int(HEIGHT * 0.03), COL_TEXT)
-        draw_text(screen, font, f"Coins: {save['coins']}", int(WIDTH * 0.80), int(HEIGHT * 0.07), COL_TEXT)
-        draw_text(screen, small, "Klik laptop. Rechts: prijs + KOOP/EQUIP. ESC = hoofdmenu.", int(WIDTH * 0.04), int(HEIGHT * 0.16), COL_TEXT)
+        # Layout maten
+        margin = int(WIDTH * 0.04)
+        top_y = int(HEIGHT * 0.04)
 
-        grid_x, grid_y = int(WIDTH * 0.04), int(HEIGHT * 0.22)
+        # Panels (zelfde als ervoor)
+        grid_x, grid_y = margin, int(HEIGHT * 0.22)
         grid_w, grid_h = int(WIDTH * 0.64), int(HEIGHT * 0.70)
         side_x = grid_x + grid_w + int(WIDTH * 0.02)
         side_y = grid_y
-        side_w = WIDTH - side_x - int(WIDTH * 0.04)
+        side_w = WIDTH - side_x - margin
 
         grid_rect = pygame.Rect(grid_x, grid_y, grid_w, grid_h)
         side_rect = pygame.Rect(side_x, side_y, side_w, grid_h)
 
+        # -----------------------------
+        # Tabs: linksboven, naast elkaar, net boven de kader
+        # -----------------------------
+        tab_h = int(HEIGHT * 0.08)
+        tab_w = int(WIDTH * 0.18)
+        tab_gap = int(WIDTH * 0.015)
+
+        tabs_y = grid_y - tab_h - int(HEIGHT * 0.02)  # net boven de kader
+
+        phone_tab_rect  = pygame.Rect(grid_x,               tabs_y, tab_w, tab_h)
+        laptop_tab_rect = pygame.Rect(grid_x + tab_w + tab_gap, tabs_y, tab_w, tab_h)
+
+        if tab_button(phone_tab_rect, "TELEFOONS", shop_tab == "phone") and click:
+            shop_tab = "phone"
+            shop_selected_id = save["equipped"].get("phone", "phone_default")
+
+        if tab_button(laptop_tab_rect, "LAPTOPS", shop_tab == "laptop") and click:
+            shop_tab = "laptop"
+            shop_selected_id = save["equipped"].get("laptop", "laptop_default")
+
+        # -----------------------------
+        # Titel: groot en in het midden bovenaan
+        # -----------------------------
+        title_surf = title_font.render("SHOP", True, COL_TEXT)
+        title_x = WIDTH // 2 - title_surf.get_width() // 2
+        title_y = top_y
+        screen.blit(title_surf, (title_x, title_y))
+
+        # Coins rechtsboven
+        coins_surf = font.render(f"Coins: {save['coins']}", True, COL_TEXT)
+        screen.blit(coins_surf, (WIDTH - margin - coins_surf.get_width(), top_y + int(HEIGHT * 0.02)))
+
+        # Panels tekenen (ongewijzigd)
         pygame.draw.rect(screen, COL_CARD_BG, grid_rect, border_radius=18)
         pygame.draw.rect(screen, COL_BORDER, grid_rect, 3, border_radius=18)
         pygame.draw.rect(screen, COL_CARD_BG, side_rect, border_radius=18)
         pygame.draw.rect(screen, COL_BORDER, side_rect, 3, border_radius=18)
 
-        items = list(SHOP_ITEMS.items())
-        if shop_selected_id is None and items:
-            shop_selected_id = items[0][0]
+        # items filter op tab
+        items = [(iid, it) for (iid, it) in SHOP_ITEMS.items() if it["type"] == shop_tab]
+        items.sort(key=lambda kv: int(kv[1]["price"]))
+
+        if (shop_selected_id is None) or (shop_selected_id not in SHOP_ITEMS) or (SHOP_ITEMS[shop_selected_id]["type"] != shop_tab):
+            # kies default per tab
+            shop_selected_id = save["equipped"].get("phone" if shop_tab == "phone" else "laptop",
+                                                   "phone_default" if shop_tab == "phone" else "laptop_default")
 
         cols = 3
         pad = int(WIDTH * 0.012)
@@ -885,7 +1054,7 @@ while running:
 
         mx, my = pygame.mouse.get_pos()
 
-        # ✅ Cards: thumbnail boven, tekst onder (NO overlap)
+        # Cards: thumbnail boven, tekst onder
         for idx, (item_id, item) in enumerate(items):
             rr = idx // cols
             cc = idx % cols
@@ -894,7 +1063,8 @@ while running:
             card = pygame.Rect(x, y, card_w, card_h)
 
             owned = bool(save["owned"].get(item_id, False))
-            equipped = (save["equipped"].get("laptop") == item_id)
+            slot_key = "laptop" if item["type"] == "laptop" else "phone"
+            equipped = (save["equipped"].get(slot_key) == item_id)
             selected = (shop_selected_id == item_id)
 
             bg = (255, 255, 255) if not selected else (255, 245, 210)
@@ -929,10 +1099,11 @@ while running:
                 shop_selected_id = item_id
 
         # Right panel (selected)
-        if shop_selected_id in SHOP_ITEMS:
+        if shop_selected_id in SHOP_ITEMS and SHOP_ITEMS[shop_selected_id]["type"] == shop_tab:
             item = SHOP_ITEMS[shop_selected_id]
             owned = bool(save["owned"].get(shop_selected_id, False))
-            equipped = (save["equipped"].get("laptop") == shop_selected_id)
+            slot_key = "laptop" if item["type"] == "laptop" else "phone"
+            equipped = (save["equipped"].get(slot_key) == shop_selected_id)
 
             draw_text(screen, font, "Selected:", side_x + 18, side_y + 18, COL_TEXT)
             draw_text(screen, font, item["name"], side_x + 18, side_y + 46, COL_TEXT)
@@ -977,7 +1148,8 @@ while running:
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
 
-        screen.blit(background_s, (0, 0))
+        # ✅ shake background (zoals code 1)
+        screen.blit(background_s, (play["shake_x"], play["shake_y"]))
 
         if play["boss_state"] in (WALKING_IN, LOOKING, WALKING_OUT):
             if play["boss_state"] == WALKING_IN:
@@ -998,21 +1170,32 @@ while running:
             boss_img = boss_asset_for_level(selected_level)
             boss_scaled = scale(boss_img, bw, bh)
             boss_rect = boss_scaled.get_rect(center=(bx, by))
-            screen.blit(boss_scaled, boss_rect)
+            screen.blit(boss_scaled, (boss_rect.x + play["shake_x"], boss_rect.y + play["shake_y"]))
 
-        screen.blit(desk_s, DESK_POS)
-        screen.blit(laptop_nohands_s, LAPTOP_POS)
+        screen.blit(desk_s, (DESK_POS[0] + play["shake_x"], DESK_POS[1] + play["shake_y"]))
+        screen.blit(laptop_nohands_s, (LAPTOP_POS[0] + play["shake_x"], LAPTOP_POS[1] + play["shake_y"]))
 
-        hands_pos = (LAPTOP_POS[0], LAPTOP_POS[1] + int(HANDS_Y_OFFSET * (HEIGHT/540)))
+        hands_pos = (
+            LAPTOP_POS[0] + play["shake_x"],
+            LAPTOP_POS[1] + int(HANDS_Y_OFFSET * (HEIGHT/540)) + play["shake_y"]
+        )
+
         if play["phone"]:
-            screen.blit(phone_s, PHONE_POS)
+            if phone_skin_s is not None:
+                screen.blit(phone_skin_s, (PHONE_POS[0] + play["shake_x"], PHONE_POS[1] + play["shake_y"]))
+            else:
+                phone_fallback = scale(img_phone_default, *PHONE_SIZE)
+                screen.blit(phone_fallback, (PHONE_POS[0] + play["shake_x"], PHONE_POS[1] + play["shake_y"]))
+        elif play["smoking"]:
+            if smoking_hand_s is not None:
+                screen.blit(smoking_hand_s, hands_pos)
         else:
             screen.blit(hands_0_s if play["hands_anim_frame"] == 0 else hands_1_s, hands_pos)
 
         draw_text(screen, font,
                   f"Level {selected_level}  |  Punten: {int(play['score'])}  |  x{params['mult']:.2f}",
                   int(WIDTH*0.02), int(HEIGHT*0.02), (0, 0, 0))
-        draw_text(screen, small, "Houd SPATIE = telefoon | ESC = hoofdmenu",
+        draw_text(screen, small, "Houd SPATIE = telefoon | Houd C = joint | ESC = hoofdmenu",
                   int(WIDTH*0.02), int(HEIGHT*0.07), (0, 0, 0))
 
         if play["boss_state"] == WALKING_IN:
@@ -1020,9 +1203,12 @@ while running:
             draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", int(WIDTH*0.02), int(HEIGHT*0.12), (204, 0, 0))
         elif play["boss_state"] == LOOKING:
             draw_text(screen, font, "BAAS KIJKT!", int(WIDTH*0.02), int(HEIGHT*0.12), (204, 0, 0))
+        elif play["smoking"]:
+            progress = min(play["smoking_timer"] / 5.0, 1.0)
+            draw_text(screen, font, f"Roken: {progress:.1%}", int(WIDTH*0.02), int(HEIGHT*0.12), (0, 150, 0))
 
         pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
-        bar = pygame.Rect(int(WIDTH*0.02), int(HEIGHT*0.20), int(WIDTH*0.27), int(HEIGHT*0.03))
+        bar = pygame.Rect(int(WIDTH*0.02) + play["shake_x"], int(HEIGHT*0.20) + play["shake_y"], int(WIDTH*0.27), int(HEIGHT*0.03))
         pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
         pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
         draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", int(WIDTH*0.02), int(HEIGHT*0.25), (0, 0, 0))
@@ -1034,14 +1220,21 @@ while running:
 
             bar_w = int(WIDTH*0.02)
             bar_h = int(HEIGHT*0.22)
-            bar_x = WIDTH - bar_w - int(WIDTH*0.02)
-            bar_y = HEIGHT - bar_h - int(HEIGHT*0.04)
+            bar_x = WIDTH - bar_w - int(WIDTH*0.02) + play["shake_x"]
+            bar_y = HEIGHT - bar_h - int(HEIGHT*0.04) + play["shake_y"]
 
             pygame.draw.rect(screen, (100, 100, 100), (bar_x, bar_y, bar_w, bar_h), border_radius=6)
             fill_h = int(bar_h * (hold_bonus / MAX_HOLD_BONUS))
             pygame.draw.rect(screen, (255, 200, 50), (bar_x, bar_y + bar_h - fill_h, bar_w, fill_h), border_radius=6)
             pygame.draw.rect(screen, (50, 50, 50), (bar_x, bar_y, bar_w, bar_h), 2, border_radius=6)
             draw_text(screen, small, f"x{hold_bonus:.2f}", bar_x - int(WIDTH*0.03), bar_y - int(HEIGHT*0.04), (204, 0, 0))
+
+        # ✅ High effect overlay (zoals code 1)
+        if play["high_timer"] > 0:
+            overlay = pygame.Surface((WIDTH, HEIGHT))
+            overlay.fill(play["hallucination_color"])
+            overlay.set_alpha(50)
+            screen.blit(overlay, (0, 0))
 
     elif scene == SCENE_COMPLETE:
         screen.fill((170, 230, 190))
