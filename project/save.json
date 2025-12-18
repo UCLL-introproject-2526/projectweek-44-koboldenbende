@@ -1,9 +1,9 @@
 {
-  "unlocked": 10,
+  "unlocked": 1,
   "stars": [
-    3,
     0,
-    1,
+    0,
+    0,
     0,
     0,
     0,
@@ -17,7 +17,7 @@
     0,
     0
   ],
-  "coins": 700600,
+  "coins": 700780,
   "highscore": 323,
   "owned": {
     "laptop_default": true,
