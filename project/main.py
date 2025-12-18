@@ -182,6 +182,10 @@ class Game:
 
         self.layout["THUMB_W"] = int(180 * sx)
         self.layout["THUMB_H"] = int(95 * sy)
+        if self.img.get("HAS_COMPLETE_BG") and self.img.get("complete_bg") is not None:
+            self.layout["complete_bg"] = scale(self.img["complete_bg"], self.WIDTH, self.HEIGHT)
+        else:
+            self.layout["complete_bg"] = None
 
     def run(self):
         while self.running:

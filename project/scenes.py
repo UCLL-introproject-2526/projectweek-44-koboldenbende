@@ -10,6 +10,7 @@
 
 import random
 import pygame
+from ui import draw_panel, draw_text_shadow, draw_big_star
 
 from config import (
     GRID_COLS, GRID_ROWS, TOTAL_LEVELS,
@@ -240,6 +241,7 @@ def update_play(game, dt):
 # Draw current scene + handle click interactions
 # -----------------------------
 def draw_scene(game, click: bool):
+    scene = game.scene
     screen = game.screen
     mx, my = pygame.mouse.get_pos()
 
@@ -647,27 +649,96 @@ def draw_scene(game, click: bool):
     # -----------------------------
     # COMPLETE
     # -----------------------------
-    elif game.scene == SCENE_COMPLETE:
-        screen.fill((170, 230, 190))
-        draw_text(screen, game.big, "LEVEL COMPLETE!", int(game.WIDTH * 0.06), int(game.HEIGHT * 0.12), (25, 60, 35))
-        draw_text(screen, game.font, f"Level {game.last_run_level}  Score: {game.last_run_score}",
-                  int(game.WIDTH * 0.07), int(game.HEIGHT * 0.30), (25, 60, 35))
+    elif scene == SCENE_COMPLETE:
+        # Achtergrond + donkere overlay (met fallback als bg None is)
+        bg = game.layout.get("complete_bg")
+        if bg is not None:
+            screen.blit(bg, (0, 0))
+        else:
+            screen.fill((10, 10, 12))
 
-        star_size = max(18, int((game.HEIGHT / 540) * 34))
-        game.draw_star_row(int(game.WIDTH * 0.07), int(game.HEIGHT * 0.39), game.last_run_stars, size=star_size, gap=int(star_size * 0.5))
+        overlay = pygame.Surface((game.WIDTH, game.HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 140))
+        screen.blit(overlay, (0, 0))
 
-        b1 = pygame.Rect(int(game.WIDTH * 0.06), int(game.HEIGHT * 0.56), int(game.WIDTH * 0.30), int(game.HEIGHT * 0.11))
-        b2 = pygame.Rect(int(game.WIDTH * 0.06), int(game.HEIGHT * 0.69), int(game.WIDTH * 0.30), int(game.HEIGHT * 0.11))
+        # Centrale kaart
+        card_w = int(game.WIDTH * 0.55)
+        card_h = int(game.HEIGHT * 0.65)
+        card_x = game.WIDTH // 2 - card_w // 2
+        card_y = game.HEIGHT // 2 - card_h // 2
 
-        if game.button(b1, "Hoofdmenu") and click:
+        draw_panel(
+            screen,
+            (card_x, card_y, card_w, card_h),
+            fill=(20, 20, 25, 220),
+            border=(253, 221, 131),
+            radius=28
+        )
+
+        # Titel
+        title_y = card_y + int(card_h * 0.07)
+        title = "LEVEL COMPLETE!"
+        draw_text_shadow(
+            screen,
+            game.big,
+            title,
+            game.WIDTH // 2 - game.big.size(title)[0] // 2,
+            title_y,
+            color=(253, 221, 131)
+        )
+
+        # Sub info
+        info_text = f"Level {game.last_run_level}   |   Score: {game.last_run_score}"
+        draw_text_shadow(
+            screen,
+            game.font,
+            info_text,
+            game.WIDTH // 2 - game.font.size(info_text)[0] // 2,
+            title_y + int(card_h * 0.12),
+            color=(230, 230, 230)
+        )
+
+        # Sterren
+        star_y = card_y + int(card_h * 0.42)
+        center_x = game.WIDTH // 2
+        gap = int(card_w * 0.18)
+        s1 = int(40 * (game.HEIGHT / 540))
+        s2 = int(55 * (game.HEIGHT / 540))
+
+        draw_big_star(screen, center_x - gap, star_y + 10, s1, filled=game.last_run_stars >= 1)
+        draw_big_star(screen, center_x,       star_y,      s2, filled=game.last_run_stars >= 2)
+        draw_big_star(screen, center_x + gap, star_y + 10, s1, filled=game.last_run_stars >= 3)
+
+        # Coins reward (zelfde berekening als in je win logic)
+        coins_earned = COINS_BASE_WIN + game.last_run_stars * COINS_PER_STAR
+        coins_text = f"+{coins_earned} coins"
+        draw_text_shadow(
+            screen,
+            game.font,
+            coins_text,
+            game.WIDTH // 2 - game.font.size(coins_text)[0] // 2,
+            card_y + int(card_h * 0.58),
+            color=(255, 215, 100)
+        )
+
+        # Knoppen
+        btn_w = int(card_w * 0.55)
+        btn_h = int(card_h * 0.12)
+        btn_x = game.WIDTH // 2 - btn_w // 2
+
+        btn_menu = pygame.Rect(btn_x, card_y + int(card_h * 0.70), btn_w, btn_h)
+        btn_next = pygame.Rect(btn_x, card_y + int(card_h * 0.84), btn_w, btn_h)
+
+        if game.menu_button(btn_menu, "HOOFDMENU") and click:
             game.scene = SCENE_MAIN_MENU
 
         if game.last_run_level < TOTAL_LEVELS:
             can_next = (game.last_run_level + 1) <= game.save["unlocked"]
-            if game.button(b2, "Volgende Level", enabled=can_next) and click and can_next:
+            if game.menu_button(btn_next, "VOLGENDE LEVEL", enabled=can_next) and click and can_next:
                 start_level(game, game.last_run_level + 1)
         else:
-            game.button(b2, "Laatste level!", enabled=False)
+            game.menu_button(btn_next, "LAATSTE LEVEL!", enabled=False)
+
 
     # -----------------------------
     # GAME OVER

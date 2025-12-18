@@ -44,6 +44,14 @@ def load_images():
     except Exception:
         img["level_select_bg"] = None
         img["HAS_LEVEL_SELECT_BG"] = False
+        # assets.py (in load_images())
+    try:
+        img["complete_bg"] = load_image("lvl_complete_scene.png")
+        img["HAS_COMPLETE_BG"] = True
+    except Exception:
+        img["complete_bg"] = None
+        img["HAS_COMPLETE_BG"] = False
+
 
     return img
 

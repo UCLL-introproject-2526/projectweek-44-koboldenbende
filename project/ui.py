@@ -8,6 +8,7 @@
 # tab_button() (shop tabs)
 
 # draw_star_row() tekent de 3 sterren
+import math
 import pygame
 from config import BUTTON_BG_COLOR, BUTTON_TEXT_COLOR, COL_BTN_BG, COL_BORDER, COL_TEXT
 
@@ -82,3 +83,39 @@ def tab_button(screen, font, rect, text, active, COL_BORDER, COL_TEXT):
     t = font.render(text, True, COL_TEXT)
     screen.blit(t, (rect.centerx - t.get_width()//2, rect.centery - t.get_height()//2))
     return rect.collidepoint(pygame.mouse.get_pos())
+
+def draw_panel(screen, rect, fill=(15, 15, 18, 180), border=(253, 221, 131), radius=20, shadow=12):
+    x, y, w, h = rect
+
+    # Shadow
+    shadow_surf = pygame.Surface((w + shadow*2, h + shadow*2), pygame.SRCALPHA)
+    pygame.draw.rect(
+        shadow_surf,
+        (0, 0, 0, 140),
+        (shadow, shadow, w, h),
+        border_radius=radius
+    )
+    screen.blit(shadow_surf, (x - shadow//2, y - shadow//2))
+
+    # Panel
+    panel = pygame.Surface((w, h), pygame.SRCALPHA)
+    pygame.draw.rect(panel, fill, (0, 0, w, h), border_radius=radius)
+    pygame.draw.rect(panel, border, (0, 0, w, h), 2, border_radius=radius)
+    screen.blit(panel, (x, y))
+
+def draw_text_shadow(screen, font_obj, text, x, y, color=(255, 255, 255), shadow=(0, 0, 0)):
+    screen.blit(font_obj.render(text, True, shadow), (x+2, y+2))
+    screen.blit(font_obj.render(text, True, color), (x, y))
+
+def draw_big_star(screen, cx, cy, size, filled=True):
+    pts = []
+    for i in range(10):
+        r = size if i % 2 == 0 else size * 0.45
+        ang = math.radians(i * 36)
+        x = cx + r * math.sin(ang)
+        y = cy - r * math.cos(ang)
+        pts.append((x, y))
+
+    color = (253, 221, 131) if filled else (80, 80, 80)
+    pygame.draw.polygon(screen, color, pts)
+    pygame.draw.polygon(screen, (20, 20, 20), pts, 2)
