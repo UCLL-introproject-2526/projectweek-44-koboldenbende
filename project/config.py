@@ -63,4 +63,6 @@ SHOP_ITEMS = {
     # --- Telefoons ---
     "phone_default":  {"type": "phone",  "price": 0,   "file": "phone.png",           "name": "Phone Default"},
     "kity_phone":     {"type": "phone",  "price": 250, "file": "kity_phone.png",      "name": "Kity Phone"},
+    "corn_phone":     {"type": "phone",  "price": 1000, "file": "cornhub_phone.png",      "name": "Corny Phone"},
+
 }
