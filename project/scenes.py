@@ -600,7 +600,7 @@ def draw_scene(game, click: bool):
                   "Houd SPATIE = telefoon | Houd C = joint | ESC = hoofdmenu",
                   int(game.WIDTH * 0.02), int(game.HEIGHT * 0.07), (0, 0, 0))
         draw_text(screen, game.small,
-                  f"Doel: {complete_score}  |  1★ {t1}  2★ {t2}  3★ {t3}",
+                  f"Doel: {complete_score}",
                   int(game.WIDTH * 0.02), int(game.HEIGHT * 0.11), (0, 0, 0))
 
         # warnings
