@@ -19,7 +19,7 @@ GRID_COLS = 5
 GRID_ROWS = 3
 TOTAL_LEVELS = GRID_COLS * GRID_ROWS  # 15
 
-# Stars thresholds
+# Stars thresholds (BASE voor level 1)
 STAR_1 = 180
 STAR_2 = 320
 STAR_3 = 500
@@ -246,7 +246,7 @@ img_boss_3 = load_image("boss_lvl3.png")
 img_hands_0 = load_image("hands1.png")
 img_hands_1 = load_image("hands2.png")
 
-# ✅ smoking hand (uit code 1)
+# smoking hand
 img_smoking_hand = load_image("Smoking.png")
 
 # Default phone img (fallback)
@@ -266,7 +266,7 @@ except Exception:
     HAS_CAUGHT_BG = False
     img_caught_bg = None
 
-# ✅ NIEUW: level select background (zoals code 1)
+# level select background
 try:
     img_level_select_bg = load_image("office_building.png")
     HAS_LEVEL_SELECT_BG = True
@@ -280,8 +280,6 @@ except Exception:
 background_s = None
 main_menu_bg = None
 caught_bg = None
-
-# ✅ NIEUW: scaled level select background
 level_select_bg = None
 
 desk_s = None
@@ -303,7 +301,6 @@ PHONE_POS = (0, 0)
 hands_0_s = None
 hands_1_s = None
 
-# ✅ smoking hand scaled
 smoking_hand_s = None
 
 # phone skin (equipped)
@@ -342,7 +339,6 @@ def recalc_layout():
     if HAS_CAUGHT_BG and img_caught_bg is not None:
         caught_bg = scale(img_caught_bg, WIDTH, HEIGHT)
 
-    # ✅ NIEUW: level select bg schalen (zoals code 1)
     if HAS_LEVEL_SELECT_BG and img_level_select_bg is not None:
         level_select_bg = scale(img_level_select_bg, WIDTH, HEIGHT)
 
@@ -397,7 +393,6 @@ def build_shop_thumbs():
             surf.fill((200, 200, 200))
             shop_thumbs[item_id] = surf
 
-# Layout init
 recalc_layout()
 build_shop_thumbs()
 
@@ -532,6 +527,21 @@ def tab_button(rect, text, active):
     return rect.collidepoint(pygame.mouse.get_pos())
 
 # -----------------------------
+# Dynamic thresholds per level
+# -----------------------------
+def level_threshold_offset(level_num: int) -> int:
+    # level 1 => +0, level 2 => +100, level 3 => +200, ...
+    return max(0, (level_num - 1) * 100)
+
+def level_star_thresholds(level_num: int):
+    off = level_threshold_offset(level_num)
+    return (STAR_1 + off, STAR_2 + off, STAR_3 + off)
+
+def level_complete_score(level_num: int) -> int:
+    # Completen = 3-star threshold van dat level
+    return level_star_thresholds(level_num)[2]
+
+# -----------------------------
 # Game helpers
 # -----------------------------
 def schedule_next_check(play_state, params):
@@ -540,12 +550,13 @@ def schedule_next_check(play_state, params):
     play_state["next_check_in"] = max(0.1, play_state["next_check_in"])
     play_state["pre_walk_sound_started"] = False
 
-def score_to_stars(score_int: int) -> int:
-    if score_int >= STAR_3:
+def score_to_stars(score_int: int, level_num: int) -> int:
+    t1, t2, t3 = level_star_thresholds(level_num)
+    if score_int >= t3:
         return 3
-    if score_int >= STAR_2:
+    if score_int >= t2:
         return 2
-    if score_int >= STAR_1:
+    if score_int >= t1:
         return 1
     return 0
 
@@ -646,7 +657,6 @@ play = {
     "hands_anim_frame": 0,
     "pre_walk_sound_started": False,
 
-    # ✅ smoking/high effect (uit code 1)
     "smoking": False,
     "smoking_timer": 0.0,
     "high_timer": 0.0,
@@ -857,10 +867,12 @@ while running:
                 if not play["phone"] and not play["smoking"] and not play["gameover"]:
                     snd_typing.play(-1)
 
-        if play["score"] >= STAR_3:
+        # ✅ WIN condition: dynamisch per level
+        complete_score = level_complete_score(selected_level)
+        if play["score"] >= complete_score:
             last_run_score = int(play["score"])
             last_run_level = selected_level
-            last_run_stars = score_to_stars(last_run_score)
+            last_run_stars = score_to_stars(last_run_score, last_run_level)
 
             prev_stars = save["stars"][last_run_level - 1]
             first_clear = (prev_stars == 0)
@@ -879,7 +891,7 @@ while running:
         if play["gameover"]:
             last_run_score = int(play["score"])
             last_run_level = selected_level
-            last_run_stars = score_to_stars(last_run_score)
+            last_run_stars = score_to_stars(last_run_score, last_run_level)
 
             prev_stars = save["stars"][last_run_level - 1]
             save["stars"][last_run_level - 1] = max(prev_stars, last_run_stars)
@@ -934,16 +946,15 @@ while running:
         screen.blit(footer_text, (WIDTH//2 - footer_text.get_width()//2, HEIGHT - int(HEIGHT * 0.06)))
 
     elif scene == SCENE_LEVEL_SELECT:
-        # ✅ Alleen background vervangen: office_building.jpg + overlays (rest HUD blijft code 2)
         if HAS_LEVEL_SELECT_BG and level_select_bg is not None:
             screen.blit(level_select_bg, (0, 0))
 
             overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 64))  # semi-transparant zwart
+            overlay.fill((0, 0, 0, 64))
             screen.blit(overlay, (0, 0))
 
             header_overlay = pygame.Surface((WIDTH, int(HEIGHT * 0.22)), pygame.SRCALPHA)
-            header_overlay.fill((0, 0, 0, 128))  # donkerder header
+            header_overlay.fill((0, 0, 0, 128))
             screen.blit(header_overlay, (0, 0))
         else:
             pygame.draw.rect(screen, (170, 210, 240), (0, 0, WIDTH, int(HEIGHT * 0.30)))
@@ -1150,6 +1161,10 @@ while running:
     elif scene == SCENE_PLAY:
         params = make_level_params(selected_level - 1)
 
+        # ✅ thresholds voor dit level
+        t1, t2, t3 = level_star_thresholds(selected_level)
+        complete_score = t3
+
         screen.blit(background_s, (play["shake_x"], play["shake_y"]))
 
         if play["boss_state"] in (WALKING_IN, LOOKING, WALKING_OUT):
@@ -1199,20 +1214,24 @@ while running:
         draw_text(screen, small, "Houd SPATIE = telefoon | Houd C = joint | ESC = hoofdmenu",
                   int(WIDTH*0.02), int(HEIGHT*0.07), (0, 0, 0))
 
+        # ✅ Links boven: juiste doelen + sterren thresholds
+        draw_text(screen, small, f"Doel: {complete_score}  |  1★ {t1}  2★ {t2}  3★ {t3}",
+                  int(WIDTH*0.02), int(HEIGHT*0.11), (0, 0, 0))
+
         if play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - play["reaction_timer"])
-            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", int(WIDTH*0.02), int(HEIGHT*0.12), (204, 0, 0))
+            draw_text(screen, font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", int(WIDTH*0.02), int(HEIGHT*0.15), (204, 0, 0))
         elif play["boss_state"] == LOOKING:
-            draw_text(screen, font, "BAAS KIJKT!", int(WIDTH*0.02), int(HEIGHT*0.12), (204, 0, 0))
+            draw_text(screen, font, "BAAS KIJKT!", int(WIDTH*0.02), int(HEIGHT*0.15), (204, 0, 0))
         elif play["smoking"]:
             progress = min(play["smoking_timer"] / 5.0, 1.0)
-            draw_text(screen, font, f"Roken: {progress:.1%}", int(WIDTH*0.02), int(HEIGHT*0.12), (0, 150, 0))
+            draw_text(screen, font, f"Roken: {progress:.1%}", int(WIDTH*0.02), int(HEIGHT*0.15), (0, 150, 0))
 
-        pct = clamp(play["score"] / STAR_3, 0.0, 1.0)
+        # ✅ progress bar schaalt nu mee met het level-doel
+        pct = clamp(play["score"] / complete_score, 0.0, 1.0)
         bar = pygame.Rect(int(WIDTH*0.02) + play["shake_x"], int(HEIGHT*0.20) + play["shake_y"], int(WIDTH*0.27), int(HEIGHT*0.03))
         pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
         pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w*pct), bar.h), border_radius=8)
-        draw_text(screen, small, f"Doel: {STAR_3} punten (finish)", int(WIDTH*0.02), int(HEIGHT*0.25), (0, 0, 0))
 
         if play["phone"]:
             combo_curve_exponent = 0.5
