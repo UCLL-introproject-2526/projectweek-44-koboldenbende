@@ -1,15 +1,9 @@
 # scenes.py
 # Alle scene-logica (tekenen + interactie) en play-update.
 
-# start_level() reset state en start typing + schedule boss
-
-# update_play() bevat alle gameplay mechanics (boss detectie, score, win/lose)
-
-# draw_scene() bevat de volledige draw + click-handling per scene
-# Dit is het “grootste” bestand omdat hier je UI flow samenkomt.
-
 import random
 import pygame
+
 from ui import draw_panel, draw_text_shadow, draw_big_star
 
 from config import (
@@ -58,9 +52,10 @@ def set_boss_path(game, direction="in"):
 
 
 # -----------------------------
-# Start level (called from main menu, level select, retry, next)
+# Start level (normal levels)
 # -----------------------------
 def start_level(game, level_num: int):
+    game.mode = "level"  # ✅ belangrijk: terug naar level mode
     game.selected_level = level_num
     params = make_level_params(level_num - 1)
 
@@ -79,13 +74,55 @@ def start_level(game, level_num: int):
     game.play["hands_anim_frame"] = 0
     game.play["pre_walk_sound_started"] = False
 
-    game.play["smoking"] = False
-    game.play["smoking_timer"] = 0.0
-    game.play["high_timer"] = 0.0
-    game.play["shake_x"] = 0
-    game.play["shake_y"] = 0
-    game.play["hallucination_color"] = (0, 255, 0)
-    game.play["hallucination_timer"] = 0.0
+    # extra mechanics
+    if "smoking" in game.play:
+        game.play["smoking"] = False
+        game.play["smoking_timer"] = 0.0
+        game.play["high_timer"] = 0.0
+        game.play["shake_x"] = 0
+        game.play["shake_y"] = 0
+        game.play["hallucination_color"] = (0, 255, 0)
+        game.play["hallucination_timer"] = 0.0
+
+    game.stop_all_loop_sounds()
+    schedule_next_check(game.play, params)
+
+    game.scene = SCENE_PLAY
+    game.snd["typing"].play(-1)
+
+
+# -----------------------------
+# Start highscore (endless)
+# -----------------------------
+def start_highscore(game):
+    game.mode = "highscore"
+    game.selected_level = 1
+
+    params = make_level_params(0)  # ✅ MUST exist
+
+    game.play["score"] = 0.0
+    game.play["phone"] = False
+    game.play["phone_hold_time"] = 0.0
+    game.play["gameover"] = False
+    game.play["caught"] = False
+    game.play["boss_state"] = WAIT
+    game.play["boss_timer"] = 0.0
+    game.play["reaction_timer"] = 0.0
+    game.play["boss_start"] = (0, 0)
+    game.play["boss_end"] = (0, 0)
+    game.play["boss_from_left"] = True
+    game.play["hands_anim_t"] = 0.0
+    game.play["hands_anim_frame"] = 0
+    game.play["pre_walk_sound_started"] = False
+
+    if "smoking" in game.play:
+        game.play["smoking"] = False
+        game.play["smoking_timer"] = 0.0
+        game.play["high_timer"] = 0.0
+        game.play["shake_x"] = 0
+        game.play["shake_y"] = 0
+        game.play["hallucination_timer"] = 0.0
+        game.play["hallucination_color"] = (0, 255, 0)
 
     game.stop_all_loop_sounds()
     schedule_next_check(game.play, params)
@@ -98,10 +135,16 @@ def start_level(game, level_num: int):
 # Update logic for play scene
 # -----------------------------
 def update_play(game, dt):
-    params = make_level_params(game.selected_level - 1)
+    # difficulty
+    if game.mode == "highscore":
+        dynamic_level = min(TOTAL_LEVELS, 1 + int(game.play["score"] // 500))
+        game.selected_level = dynamic_level
+        params = make_level_params(dynamic_level - 1)
+    else:
+        params = make_level_params(game.selected_level - 1)
 
     # hands animation
-    if not game.play["phone"] and not game.play["smoking"]:
+    if not game.play["phone"] and not game.play.get("smoking", False):
         game.play["hands_anim_t"] += dt
         if game.play["hands_anim_t"] >= 0.15:
             game.play["hands_anim_t"] -= 0.15
@@ -116,40 +159,41 @@ def update_play(game, dt):
         combo_curve_exponent = 0.5
         raw_bonus = 1.0 + (game.play["phone_hold_time"] ** combo_curve_exponent)
         hold_bonus = min(raw_bonus, MAX_HOLD_BONUS)
-        high_bonus = 1.2 if game.play["high_timer"] > 0 else 1.0
+        high_bonus = 1.2 if game.play.get("high_timer", 0) > 0 else 1.0
         game.play["score"] += PHONE_POINTS_PER_SEC * hold_bonus * params["mult"] * high_bonus * dt
     else:
         game.play["phone_hold_time"] = 0.0
 
-    # smoking -> high
-    if game.play["smoking"]:
-        game.play["smoking_timer"] += dt
-        if game.play["smoking_timer"] >= 5.0:
-            game.play["smoking"] = False
-            game.play["high_timer"] = 15.0
-            game.set_popup("Joint smoked! You're high!", POPUP_DURATION)
-    else:
-        game.play["smoking_timer"] = 0.0
+    # smoking -> high (als aanwezig)
+    if "smoking" in game.play:
+        if game.play["smoking"]:
+            game.play["smoking_timer"] += dt
+            if game.play["smoking_timer"] >= 5.0:
+                game.play["smoking"] = False
+                game.play["high_timer"] = 15.0
+                game.set_popup("Joint smoked! You're high!", POPUP_DURATION)
+        else:
+            game.play["smoking_timer"] = 0.0
 
-    # high effects
-    if game.play["high_timer"] > 0:
-        game.play["high_timer"] -= dt
-        game.play["shake_x"] = random.randint(-15, 15)
-        game.play["shake_y"] = random.randint(-15, 15)
+        # high effects
+        if game.play["high_timer"] > 0:
+            game.play["high_timer"] -= dt
+            game.play["shake_x"] = random.randint(-15, 15)
+            game.play["shake_y"] = random.randint(-15, 15)
 
-        game.play["hallucination_timer"] += dt
-        if game.play["hallucination_timer"] >= 1.0:
-            game.play["hallucination_timer"] -= 1.0
-            game.play["hallucination_color"] = (
-                random.randint(0, 255),
-                random.randint(0, 255),
-                random.randint(0, 255),
-            )
-    else:
-        game.play["shake_x"] = 0
-        game.play["shake_y"] = 0
-        game.play["hallucination_color"] = (0, 255, 0)
-        game.play["hallucination_timer"] = 0.0
+            game.play["hallucination_timer"] += dt
+            if game.play["hallucination_timer"] >= 1.0:
+                game.play["hallucination_timer"] -= 1.0
+                game.play["hallucination_color"] = (
+                    random.randint(0, 255),
+                    random.randint(0, 255),
+                    random.randint(0, 255),
+                )
+        else:
+            game.play["shake_x"] = 0
+            game.play["shake_y"] = 0
+            game.play["hallucination_color"] = (0, 255, 0)
+            game.play["hallucination_timer"] = 0.0
 
     # boss timing/state machine
     game.play["boss_timer"] += dt
@@ -168,7 +212,7 @@ def update_play(game, dt):
 
     elif game.play["boss_state"] == WALKING_IN:
         game.play["reaction_timer"] += dt
-        if (game.play["phone"] or game.play["smoking"]) and game.play["reaction_timer"] > params["grace"]:
+        if (game.play["phone"] or game.play.get("smoking", False)) and game.play["reaction_timer"] > params["grace"]:
             game.play["caught"] = True
             game.play["gameover"] = True
 
@@ -179,7 +223,7 @@ def update_play(game, dt):
             game.snd["boss_chatter"].play(-1)
 
     elif game.play["boss_state"] == LOOKING:
-        if game.play["phone"] or game.play["smoking"]:
+        if game.play["phone"] or game.play.get("smoking", False):
             game.play["caught"] = True
             game.play["gameover"] = True
 
@@ -196,45 +240,58 @@ def update_play(game, dt):
             game.play["boss_timer"] = 0.0
             game.snd["boss_walk"].stop()
             schedule_next_check(game.play, params)
-            if not game.play["phone"] and not game.play["smoking"] and not game.play["gameover"]:
+            if not game.play["phone"] and not game.play.get("smoking", False) and not game.play["gameover"]:
                 game.snd["typing"].play(-1)
 
-    # WIN condition (dynamic per level)
-    complete_score = level_complete_score(game.selected_level)
-    if game.play["score"] >= complete_score:
-        game.last_run_score = int(game.play["score"])
-        game.last_run_level = game.selected_level
-        game.last_run_stars = score_to_stars(game.last_run_score, game.last_run_level)
+    # -------------------------
+    # WIN condition (alleen in level mode)
+    # -------------------------
+    if game.mode != "highscore":
+        complete_score = level_complete_score(game.selected_level)
+        if game.play["score"] >= complete_score:
+            game.last_run_score = int(game.play["score"])
+            game.last_run_level = game.selected_level
+            game.last_run_stars = score_to_stars(game.last_run_score, game.last_run_level)
 
-        prev_stars = game.save["stars"][game.last_run_level - 1]
-        first_clear = (prev_stars == 0)
+            prev_stars = game.save["stars"][game.last_run_level - 1]
+            first_clear = (prev_stars == 0)
 
-        game.save["stars"][game.last_run_level - 1] = max(prev_stars, game.last_run_stars)
-        if game.last_run_level < TOTAL_LEVELS:
-            game.save["unlocked"] = max(game.save["unlocked"], game.last_run_level + 1)
+            game.save["stars"][game.last_run_level - 1] = max(prev_stars, game.last_run_stars)
+            if game.last_run_level < TOTAL_LEVELS:
+                game.save["unlocked"] = max(game.save["unlocked"], game.last_run_level + 1)
 
-        game.save["coins"] += (COINS_BASE_WIN + game.last_run_stars * COINS_PER_STAR)
-        if first_clear:
-            game.save["coins"] += COINS_FIRST_CLEAR_BONUS
+            game.save["coins"] += (COINS_BASE_WIN + game.last_run_stars * COINS_PER_STAR)
+            if first_clear:
+                game.save["coins"] += COINS_FIRST_CLEAR_BONUS
 
-        write_save(game.save)
-        game.scene = SCENE_COMPLETE
-        return
+            write_save(game.save)
+            game.scene = SCENE_COMPLETE
+            return
 
+    # -------------------------
     # GAME OVER
+    # -------------------------
     if game.play["gameover"]:
         game.last_run_score = int(game.play["score"])
         game.last_run_level = game.selected_level
         game.last_run_stars = score_to_stars(game.last_run_score, game.last_run_level)
 
-        prev_stars = game.save["stars"][game.last_run_level - 1]
-        game.save["stars"][game.last_run_level - 1] = max(prev_stars, game.last_run_stars)
+        # level stats alleen bewaren in level mode
+        if game.mode != "highscore":
+            prev_stars = game.save["stars"][game.last_run_level - 1]
+            game.save["stars"][game.last_run_level - 1] = max(prev_stars, game.last_run_stars)
 
-        coins_earned = game.last_run_stars * COINS_PER_STAR
-        game.save["coins"] += coins_earned
+            coins_earned = game.last_run_stars * COINS_PER_STAR
+            game.save["coins"] += coins_earned
+
+        # highscore save
+        if game.mode == "highscore":
+            run_score = int(game.play["score"])
+            game.save["highscore"] = max(int(game.save.get("highscore", 0)), run_score)
 
         write_save(game.save)
         game.scene = SCENE_GAMEOVER
+        return
 
 
 # -----------------------------
@@ -248,7 +305,7 @@ def draw_scene(game, click: bool):
     # -----------------------------
     # MAIN MENU
     # -----------------------------
-    if game.scene == SCENE_MAIN_MENU:
+    if scene == SCENE_MAIN_MENU:
         if game.img["HAS_MENU_BG"] and game.layout["main_menu_bg"] is not None:
             screen.blit(game.layout["main_menu_bg"], (0, 0))
             overlay = pygame.Surface((game.WIDTH, game.HEIGHT))
@@ -267,7 +324,7 @@ def draw_scene(game, click: bool):
 
         start_rect = pygame.Rect(button_x, int(game.HEIGHT * 0.33), button_width, button_height)
         if game.menu_button(start_rect, "START GAME") and click:
-            start_level(game, game.save["unlocked"])
+            start_highscore(game)
 
         levels_rect = pygame.Rect(button_x, int(game.HEIGHT * 0.48), button_width, button_height)
         if game.menu_button(levels_rect, "LEVEL SELECT") and click:
@@ -291,11 +348,15 @@ def draw_scene(game, click: bool):
             (game.WIDTH // 2 - footer_text.get_width() // 2, game.HEIGHT - int(game.HEIGHT * 0.06)),
         )
 
+        # (optioneel) highscore tonen
+        hs = int(game.save.get("highscore", 0))
+        draw_text(screen, game.small, f"Highscore: {hs}", int(game.WIDTH*0.04), int(game.HEIGHT*0.90), (255,255,255))
+
     # -----------------------------
     # LEVEL SELECT
     # -----------------------------
-    elif game.scene == SCENE_LEVEL_SELECT:
-        if game.img["HAS_LEVEL_SELECT_BG"] and game.layout["level_select_bg"] is not None:
+    elif scene == SCENE_LEVEL_SELECT:
+        if game.img.get("HAS_LEVEL_SELECT_BG", False) and game.layout.get("level_select_bg") is not None:
             screen.blit(game.layout["level_select_bg"], (0, 0))
 
             overlay = pygame.Surface((game.WIDTH, game.HEIGHT), pygame.SRCALPHA)
@@ -313,7 +374,8 @@ def draw_scene(game, click: bool):
                 (0, int(game.HEIGHT * 0.30), game.WIDTH, game.HEIGHT - int(game.HEIGHT * 0.30)),
             )
 
-        back_rect = pygame.Rect(int(game.WIDTH * 0.02), int(game.HEIGHT * 0.03), int(game.WIDTH * 0.12), int(game.HEIGHT * 0.07))
+        back_rect = pygame.Rect(int(game.WIDTH * 0.02), int(game.HEIGHT * 0.03),
+                                int(game.WIDTH * 0.12), int(game.HEIGHT * 0.07))
         if game.button(back_rect, "< Terug") and click:
             game.scene = SCENE_MAIN_MENU
 
@@ -322,7 +384,8 @@ def draw_scene(game, click: bool):
         draw_text(screen, game.font, f"Coins: {game.save['coins']}",
                   int(game.WIDTH * 0.82), int(game.HEIGHT * 0.18), (255, 255, 255))
 
-        shop_btn = pygame.Rect(int(game.WIDTH * 0.79), int(game.HEIGHT * 0.04), int(game.WIDTH * 0.17), int(game.HEIGHT * 0.09))
+        shop_btn = pygame.Rect(int(game.WIDTH * 0.79), int(game.HEIGHT * 0.04),
+                               int(game.WIDTH * 0.17), int(game.HEIGHT * 0.09))
         if game.button(shop_btn, "SHOP") and click:
             game.scene = SCENE_SHOP
             if game.shop_tab == "phone":
@@ -341,7 +404,12 @@ def draw_scene(game, click: bool):
                 lvl_num = idx + 1
                 x = GRID_LEFT + c * TILE_W
                 y = GRID_TOP + r * TILE_H
-                rect = pygame.Rect(x + int(TILE_W * 0.07), y + int(TILE_H * 0.10), int(TILE_W * 0.86), int(TILE_H * 0.78))
+                rect = pygame.Rect(
+                    x + int(TILE_W * 0.07),
+                    y + int(TILE_H * 0.10),
+                    int(TILE_W * 0.86),
+                    int(TILE_H * 0.78)
+                )
 
                 unlocked = lvl_num <= game.save["unlocked"]
                 hover = rect.collidepoint(mx, my)
@@ -355,8 +423,13 @@ def draw_scene(game, click: bool):
                     screen.blit(t, (rect.x + 12, rect.y + 10))
 
                     star_size = max(12, int((game.HEIGHT / 540) * 18))
-                    game.draw_star_row(rect.x + 18, rect.y + int(rect.h * 0.55), game.save["stars"][idx],
-                                       size=star_size, gap=max(4, int(star_size * 0.35)))
+                    game.draw_star_row(
+                        rect.x + 18,
+                        rect.y + int(rect.h * 0.55),
+                        game.save["stars"][idx],
+                        size=star_size,
+                        gap=max(4, int(star_size * 0.35))
+                    )
 
                     if click and hover:
                         start_level(game, lvl_num)
@@ -372,7 +445,7 @@ def draw_scene(game, click: bool):
     # -----------------------------
     # SHOP
     # -----------------------------
-    elif game.scene == SCENE_SHOP:
+    elif scene == SCENE_SHOP:
         screen.fill(COL_PANEL_BG)
 
         margin = int(game.WIDTH * 0.04)
@@ -390,7 +463,6 @@ def draw_scene(game, click: bool):
         tab_h = int(game.HEIGHT * 0.08)
         tab_w = int(game.WIDTH * 0.18)
         tab_gap = int(game.WIDTH * 0.015)
-
         tabs_y = grid_y - tab_h - int(game.HEIGHT * 0.02)
 
         phone_tab_rect = pygame.Rect(grid_x, tabs_y, tab_w, tab_h)
@@ -405,9 +477,7 @@ def draw_scene(game, click: bool):
             game.shop_selected_id = game.save["equipped"].get("laptop", "laptop_default")
 
         title_surf = game.title_font.render("SHOP", True, COL_TEXT)
-        title_x = game.WIDTH // 2 - title_surf.get_width() // 2
-        title_y = top_y
-        screen.blit(title_surf, (title_x, title_y))
+        screen.blit(title_surf, (game.WIDTH // 2 - title_surf.get_width() // 2, top_y))
 
         coins_surf = game.font.render(f"Coins: {game.save['coins']}", True, COL_TEXT)
         screen.blit(coins_surf, (game.WIDTH - margin - coins_surf.get_width(), top_y + int(game.HEIGHT * 0.02)))
@@ -431,7 +501,6 @@ def draw_scene(game, click: bool):
         card_w = (grid_w - pad * (cols + 1)) // cols
         card_h = int(game.HEIGHT * 0.20)
 
-        # Cards
         for idx, (item_id, item) in enumerate(items):
             rr = idx // cols
             cc = idx % cols
@@ -444,8 +513,8 @@ def draw_scene(game, click: bool):
             equipped = (game.save["equipped"].get(slot_key) == item_id)
             selected = (game.shop_selected_id == item_id)
 
-            bg = (255, 255, 255) if not selected else (255, 245, 210)
-            pygame.draw.rect(screen, bg, card, border_radius=16)
+            bgc = (255, 255, 255) if not selected else (255, 245, 210)
+            pygame.draw.rect(screen, bgc, card, border_radius=16)
             pygame.draw.rect(screen, COL_BORDER if selected else COL_MUTED, card, 3, border_radius=16)
 
             text_area_h = int(card_h * 0.36)
@@ -475,7 +544,6 @@ def draw_scene(game, click: bool):
             if click and card.collidepoint(mx, my):
                 game.shop_selected_id = item_id
 
-        # Side panel
         if game.shop_selected_id in SHOP_ITEMS and SHOP_ITEMS[game.shop_selected_id]["type"] == game.shop_tab:
             item = SHOP_ITEMS[game.shop_selected_id]
             owned = bool(game.save["owned"].get(game.shop_selected_id, False))
@@ -487,9 +555,7 @@ def draw_scene(game, click: bool):
 
             preview = game.shop_thumbs.get(game.shop_selected_id)
             if preview:
-                prev_w = side_w - 36
-                prev_h = int(grid_h * 0.22)
-                prev_rect = pygame.Rect(side_x + 18, side_y + 80, prev_w, prev_h)
+                prev_rect = pygame.Rect(side_x + 18, side_y + 80, side_w - 36, int(grid_h * 0.22))
                 blit_fit_center(screen, preview, prev_rect, padding=8)
 
             draw_text(screen, game.font, f"Price: {item['price']} coins", side_x + 18, side_y + int(grid_h * 0.36), COL_TEXT)
@@ -503,34 +569,17 @@ def draw_scene(game, click: bool):
             else:
                 if owned:
                     if game.ui_button(btn, "EQUIP") and click:
-                        buy_or_equip(
-                            game.shop_selected_id,
-                            game.save,
-                            game.snd,
-                            game.set_popup,
-                            game.layout,
-                            game.img,
-                        )
+                        buy_or_equip(game.shop_selected_id, game.save, game.snd, game.set_popup, game.layout, game.img)
                 else:
                     can_buy = game.save["coins"] >= int(item["price"])
                     if game.ui_button(btn, "KOOP" if can_buy else "TE WEINIG COINS", enabled=can_buy) and click and can_buy:
-                        buy_or_equip(
-                            game.shop_selected_id,
-                            game.save,
-                            game.snd,
-                            game.set_popup,
-                            game.layout,
-                            game.img,
-                        )
+                        buy_or_equip(game.shop_selected_id, game.save, game.snd, game.set_popup, game.layout, game.img)
                     elif click and btn.collidepoint(mx, my) and not can_buy:
                         game.set_popup("Niet genoeg coins!", POPUP_DURATION)
 
-        # Popup
         if game.popup_timer > 0 and game.popup_text:
             w, h = int(game.WIDTH * 0.54), int(game.HEIGHT * 0.12)
-            px = (game.WIDTH - w) // 2
-            py = int(game.HEIGHT * 0.03)
-            rect = pygame.Rect(px, py, w, h)
+            rect = pygame.Rect((game.WIDTH - w) // 2, int(game.HEIGHT * 0.03), w, h)
             pygame.draw.rect(screen, (255, 255, 255), rect, border_radius=16)
             pygame.draw.rect(screen, COL_BORDER, rect, 3, border_radius=16)
             t = game.font.render(game.popup_text, True, COL_TEXT)
@@ -539,16 +588,14 @@ def draw_scene(game, click: bool):
     # -----------------------------
     # PLAY
     # -----------------------------
-    elif game.scene == SCENE_PLAY:
+    elif scene == SCENE_PLAY:
         params = make_level_params(game.selected_level - 1)
 
         t1, t2, t3 = level_star_thresholds(game.selected_level)
         complete_score = t3
 
-        # background with shake
-        screen.blit(game.layout["background_s"], (game.play["shake_x"], game.play["shake_y"]))
+        screen.blit(game.layout["background_s"], (game.play.get("shake_x", 0), game.play.get("shake_y", 0)))
 
-        # boss draw
         if game.play["boss_state"] in (WALKING_IN, LOOKING, WALKING_OUT):
             if game.play["boss_state"] == WALKING_IN:
                 t = clamp(game.play["boss_timer"] / params["walk_in"], 0.0, 1.0)
@@ -568,81 +615,68 @@ def draw_scene(game, click: bool):
             boss_img = boss_asset_for_level(game.img, game.selected_level)
             boss_scaled = scale(boss_img, bw, bh)
             boss_rect = boss_scaled.get_rect(center=(bx, by))
-            screen.blit(boss_scaled, (boss_rect.x + game.play["shake_x"], boss_rect.y + game.play["shake_y"]))
+            screen.blit(boss_scaled, (boss_rect.x + game.play.get("shake_x", 0), boss_rect.y + game.play.get("shake_y", 0)))
 
-        # desk + laptop
         DESK_POS = game.layout["DESK_POS"]
-        screen.blit(game.layout["desk_s"], (DESK_POS[0] + game.play["shake_x"], DESK_POS[1] + game.play["shake_y"]))
-        screen.blit(game.layout["laptop_nohands_s"], (game.layout["LAPTOP_POS"][0] + game.play["shake_x"], game.layout["LAPTOP_POS"][1] + game.play["shake_y"]))
+        screen.blit(game.layout["desk_s"], (DESK_POS[0] + game.play.get("shake_x", 0), DESK_POS[1] + game.play.get("shake_y", 0)))
+        screen.blit(game.layout["laptop_nohands_s"], (game.layout["LAPTOP_POS"][0] + game.play.get("shake_x", 0), game.layout["LAPTOP_POS"][1] + game.play.get("shake_y", 0)))
 
         from config import HANDS_Y_OFFSET
         hands_pos = (
-            game.layout["LAPTOP_POS"][0] + game.play["shake_x"],
-            game.layout["LAPTOP_POS"][1] + int(HANDS_Y_OFFSET * (game.HEIGHT/540)) + game.play["shake_y"],
+            game.layout["LAPTOP_POS"][0] + game.play.get("shake_x", 0),
+            game.layout["LAPTOP_POS"][1] + int(HANDS_Y_OFFSET * (game.HEIGHT / 540)) + game.play.get("shake_y", 0),
         )
 
-
         if game.play["phone"]:
-            if game.layout["phone_skin_s"] is not None:
-                screen.blit(game.layout["phone_skin_s"], (game.layout["PHONE_POS"][0] + game.play["shake_x"], game.layout["PHONE_POS"][1] + game.play["shake_y"]))
+            if game.layout.get("phone_skin_s") is not None:
+                screen.blit(game.layout["phone_skin_s"], (game.layout["PHONE_POS"][0] + game.play.get("shake_x", 0), game.layout["PHONE_POS"][1] + game.play.get("shake_y", 0)))
             else:
                 phone_fallback = scale(game.img["phone_default"], *game.layout["PHONE_SIZE"])
-                screen.blit(phone_fallback, (game.layout["PHONE_POS"][0] + game.play["shake_x"], game.layout["PHONE_POS"][1] + game.play["shake_y"]))
-        elif game.play["smoking"]:
-            if game.layout["smoking_hand_s"] is not None:
+                screen.blit(phone_fallback, (game.layout["PHONE_POS"][0] + game.play.get("shake_x", 0), game.layout["PHONE_POS"][1] + game.play.get("shake_y", 0)))
+        elif game.play.get("smoking", False):
+            if game.layout.get("smoking_hand_s") is not None:
                 screen.blit(game.layout["smoking_hand_s"], hands_pos)
         else:
             screen.blit(game.layout["hands_0_s"] if game.play["hands_anim_frame"] == 0 else game.layout["hands_1_s"], hands_pos)
 
-        # top HUD
+        # HUD
         draw_text(screen, game.font,
                   f"Level {game.selected_level}  |  Punten: {int(game.play['score'])}  |  x{params['mult']:.2f}",
                   int(game.WIDTH * 0.02), int(game.HEIGHT * 0.02), (0, 0, 0))
-        draw_text(screen, game.small,
-                  "Houd SPATIE = telefoon | Houd C = joint | ESC = hoofdmenu",
-                  int(game.WIDTH * 0.02), int(game.HEIGHT * 0.07), (0, 0, 0))
-        draw_text(screen, game.small,
-                  f"Doel: {complete_score}",
-                  int(game.WIDTH * 0.02), int(game.HEIGHT * 0.11), (0, 0, 0))
 
-        # warnings
+        if game.mode == "highscore":
+            draw_text(screen, game.small, "HIGHSCORE MODE  |  Houd SPATIE = telefoon | Houd C = joint | ESC = menu",
+                      int(game.WIDTH * 0.02), int(game.HEIGHT * 0.07), (0, 0, 0))
+            draw_text(screen, game.small, f"Beste: {int(game.save.get('highscore', 0))}",
+                      int(game.WIDTH * 0.02), int(game.HEIGHT * 0.11), (0, 0, 0))
+        else:
+            draw_text(screen, game.small, "Houd SPATIE = telefoon | Houd C = joint | ESC = hoofdmenu",
+                      int(game.WIDTH * 0.02), int(game.HEIGHT * 0.07), (0, 0, 0))
+            draw_text(screen, game.small, f"Doel: {complete_score}  |  1★ {t1}  2★ {t2}  3★ {t3}",
+                      int(game.WIDTH * 0.02), int(game.HEIGHT * 0.11), (0, 0, 0))
+
         if game.play["boss_state"] == WALKING_IN:
             left = max(0.0, params["grace"] - game.play["reaction_timer"])
             draw_text(screen, game.font, f"BAAS KOMT! Loslaten binnen {left:.2f}s!", int(game.WIDTH * 0.02), int(game.HEIGHT * 0.15), (204, 0, 0))
         elif game.play["boss_state"] == LOOKING:
             draw_text(screen, game.font, "BAAS KIJKT!", int(game.WIDTH * 0.02), int(game.HEIGHT * 0.15), (204, 0, 0))
-        elif game.play["smoking"]:
-            progress = min(game.play["smoking_timer"] / 5.0, 1.0)
+        elif game.play.get("smoking", False):
+            progress = min(game.play.get("smoking_timer", 0.0) / 5.0, 1.0)
             draw_text(screen, game.font, f"Roken: {progress:.1%}", int(game.WIDTH * 0.02), int(game.HEIGHT * 0.15), (0, 150, 0))
 
-        # progress bar (goal-based)
-        pct = clamp(game.play["score"] / complete_score, 0.0, 1.0)
-        bar = pygame.Rect(int(game.WIDTH * 0.02) + game.play["shake_x"], int(game.HEIGHT * 0.20) + game.play["shake_y"],
-                          int(game.WIDTH * 0.27), int(game.HEIGHT * 0.03))
-        pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
-        pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w * pct), bar.h), border_radius=8)
-
-        # hold bonus bar
-        if game.play["phone"]:
-            combo_curve_exponent = 0.5
-            raw_bonus = 1.0 + (game.play["phone_hold_time"] ** combo_curve_exponent)
-            hold_bonus = min(raw_bonus, MAX_HOLD_BONUS)
-
-            bar_w = int(game.WIDTH * 0.02)
-            bar_h = int(game.HEIGHT * 0.22)
-            bar_x = game.WIDTH - bar_w - int(game.WIDTH * 0.02) + game.play["shake_x"]
-            bar_y = game.HEIGHT - bar_h - int(game.HEIGHT * 0.04) + game.play["shake_y"]
-
-            pygame.draw.rect(screen, (100, 100, 100), (bar_x, bar_y, bar_w, bar_h), border_radius=6)
-            fill_h = int(bar_h * (hold_bonus / MAX_HOLD_BONUS))
-            pygame.draw.rect(screen, (255, 200, 50), (bar_x, bar_y + bar_h - fill_h, bar_w, fill_h), border_radius=6)
-            pygame.draw.rect(screen, (50, 50, 50), (bar_x, bar_y, bar_w, bar_h), 2, border_radius=6)
-            draw_text(screen, game.small, f"x{hold_bonus:.2f}", bar_x - int(game.WIDTH * 0.03), bar_y - int(game.HEIGHT * 0.04), (204, 0, 0))
+        # progress bar: alleen in level mode
+        if game.mode != "highscore":
+            pct = clamp(game.play["score"] / complete_score, 0.0, 1.0)
+            bar = pygame.Rect(int(game.WIDTH * 0.02) + game.play.get("shake_x", 0),
+                              int(game.HEIGHT * 0.20) + game.play.get("shake_y", 0),
+                              int(game.WIDTH * 0.27), int(game.HEIGHT * 0.03))
+            pygame.draw.rect(screen, (20, 20, 25), bar, border_radius=8)
+            pygame.draw.rect(screen, (90, 220, 120), (bar.x, bar.y, int(bar.w * pct), bar.h), border_radius=8)
 
         # hallucination overlay
-        if game.play["high_timer"] > 0:
+        if game.play.get("high_timer", 0) > 0:
             overlay = pygame.Surface((game.WIDTH, game.HEIGHT))
-            overlay.fill(game.play["hallucination_color"])
+            overlay.fill(game.play.get("hallucination_color", (0, 255, 0)))
             overlay.set_alpha(50)
             screen.blit(overlay, (0, 0))
 
@@ -650,7 +684,6 @@ def draw_scene(game, click: bool):
     # COMPLETE
     # -----------------------------
     elif scene == SCENE_COMPLETE:
-        # Achtergrond + donkere overlay (met fallback als bg None is)
         bg = game.layout.get("complete_bg")
         if bg is not None:
             screen.blit(bg, (0, 0))
@@ -661,7 +694,6 @@ def draw_scene(game, click: bool):
         overlay.fill((0, 0, 0, 140))
         screen.blit(overlay, (0, 0))
 
-        # Centrale kaart
         card_w = int(game.WIDTH * 0.55)
         card_h = int(game.HEIGHT * 0.65)
         card_x = game.WIDTH // 2 - card_w // 2
@@ -675,7 +707,6 @@ def draw_scene(game, click: bool):
             radius=28
         )
 
-        # Titel
         title_y = card_y + int(card_h * 0.07)
         title = "LEVEL COMPLETE!"
         draw_text_shadow(
@@ -687,7 +718,6 @@ def draw_scene(game, click: bool):
             color=(253, 221, 131)
         )
 
-        # Sub info
         info_text = f"Level {game.last_run_level}   |   Score: {game.last_run_score}"
         draw_text_shadow(
             screen,
@@ -698,7 +728,6 @@ def draw_scene(game, click: bool):
             color=(230, 230, 230)
         )
 
-        # Sterren
         star_y = card_y + int(card_h * 0.42)
         center_x = game.WIDTH // 2
         gap = int(card_w * 0.18)
@@ -709,7 +738,6 @@ def draw_scene(game, click: bool):
         draw_big_star(screen, center_x,       star_y,      s2, filled=game.last_run_stars >= 2)
         draw_big_star(screen, center_x + gap, star_y + 10, s1, filled=game.last_run_stars >= 3)
 
-        # Coins reward (zelfde berekening als in je win logic)
         coins_earned = COINS_BASE_WIN + game.last_run_stars * COINS_PER_STAR
         coins_text = f"+{coins_earned} coins"
         draw_text_shadow(
@@ -721,7 +749,6 @@ def draw_scene(game, click: bool):
             color=(255, 215, 100)
         )
 
-        # Knoppen
         btn_w = int(card_w * 0.55)
         btn_h = int(card_h * 0.12)
         btn_x = game.WIDTH // 2 - btn_w // 2
@@ -739,11 +766,10 @@ def draw_scene(game, click: bool):
         else:
             game.menu_button(btn_next, "LAATSTE LEVEL!", enabled=False)
 
-
     # -----------------------------
     # GAME OVER
     # -----------------------------
-    elif game.scene == SCENE_GAMEOVER:
+    elif scene == SCENE_GAMEOVER:
         if game.img["HAS_CAUGHT_BG"] and game.layout["caught_bg"] is not None:
             screen.blit(game.layout["caught_bg"], (0, 0))
             overlay = pygame.Surface((game.WIDTH, game.HEIGHT), pygame.SRCALPHA)
@@ -756,8 +782,14 @@ def draw_scene(game, click: bool):
         bx = game.WIDTH // 2 - bw // 2
 
         retry_rect = pygame.Rect(bx, int(game.HEIGHT * 0.66), bw, bh)
-        if game.menu_button(retry_rect, "RETRY") and click:
-            start_level(game, game.last_run_level)
+
+        # In highscore mode: retry = opnieuw highscore starten
+        if game.mode == "highscore":
+            if game.menu_button(retry_rect, "RETRY (HIGHSCORE)") and click:
+                start_highscore(game)
+        else:
+            if game.menu_button(retry_rect, "RETRY") and click:
+                start_level(game, game.last_run_level)
 
         back_rect = pygame.Rect(bx, int(game.HEIGHT * 0.80), bw, bh)
         if game.menu_button(back_rect, "TERUG NAAR LEVELS") and click:

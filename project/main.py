@@ -62,6 +62,9 @@ class Game:
 
         self._setup_fonts()
 
+        self.mode = "level"   # of MODE_LEVEL
+
+
         # Layout container
         self.layout = {
             "background_s": None,

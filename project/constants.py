@@ -14,3 +14,6 @@ SCENE_PLAY         = "play"
 SCENE_COMPLETE     = "complete"
 SCENE_GAMEOVER     = "gameover"
 SCENE_SHOP         = "shop"
+MODE_LEVEL = "level"
+MODE_HIGHSCORE = "highscore"
+

@@ -45,6 +45,8 @@ def load_save():
 
         data["unlocked"] = int(clamp(int(data["unlocked"]), 1, TOTAL_LEVELS))
         data["coins"] = max(0, int(data.get("coins", 0)))
+        data["highscore"] = max(0, int(data.get("highscore", 0)))
+
 
         if "owned" not in data or not isinstance(data["owned"], dict):
             data["owned"] = _deepcopy_json(DEFAULT_SAVE["owned"])
