@@ -17,22 +17,22 @@
     0,
     0
   ],
-  "coins": 700600,
+  "coins": 699600,
   "highscore": 323,
   "owned": {
     "laptop_default": true,
     "laptop_red": false,
-    "laptop_gaming": true,
+    "laptop_gaming": false,
     "future_gaming": false,
     "roze_laptop": false,
     "hellokitylaptop": false,
-    "kity_laptop": true,
+    "kity_laptop": false,
     "phone_default": true,
     "kity_phone": true,
-    "corn_phone": true
+    "corn_phone": false
   },
   "equipped": {
     "laptop": "kity_laptop",
-    "phone": "corn_phone"
+    "phone": "kity_phone"
   }
 }
