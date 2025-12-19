@@ -52,7 +52,6 @@ def load_images():
         img["complete_bg"] = None
         img["HAS_COMPLETE_BG"] = False
 
-
     return img
 
 def boss_asset_for_level(img, level_num: int) -> pygame.Surface:

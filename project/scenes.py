@@ -220,7 +220,10 @@ def update_play(game, dt):
             game.play["boss_timer"] = 0.0
             game.play["boss_state"] = LOOKING
             game.snd["boss_walk"].stop()
-            game.snd["boss_chatter"].play(-1)
+            if game.selected_level >= 10:
+                game.snd["boss3_chatter"].play(-1)
+            else:
+                game.snd["boss_chatter"].play(-1)
 
     elif game.play["boss_state"] == LOOKING:
         if game.play["phone"] or game.play.get("smoking", False):
@@ -232,7 +235,10 @@ def update_play(game, dt):
             game.play["boss_timer"] = 0.0
             game.snd["boss_chatter"].stop()
             set_boss_path(game, direction="out")
-            game.snd["boss_walk"].play(-1)
+            if game.selected_level >= 10:
+                game.snd["boss3_chatter"].play(-1)
+            else:
+                game.snd["boss_chatter"].play(-1)
 
     elif game.play["boss_state"] == WALKING_OUT:
         if game.play["boss_timer"] >= params["walk_out"]:
@@ -611,7 +617,9 @@ def draw_scene(game, click: bool):
 
             bw = int(game.layout["BOSS_FAR"][0] + (game.layout["BOSS_NEAR"][0] - game.layout["BOSS_FAR"][0]) * t)
             bh = int(game.layout["BOSS_FAR"][1] + (game.layout["BOSS_NEAR"][1] - game.layout["BOSS_FAR"][1]) * t)
-
+            if game.selected_level >= 5:
+                bw = int(bw * 1.25)
+                bh = int(bh * 1.25)
             boss_img = boss_asset_for_level(game.img, game.selected_level)
             boss_scaled = scale(boss_img, bw, bh)
             boss_rect = boss_scaled.get_rect(center=(bx, by))

@@ -1,5 +1,5 @@
 {
-  "unlocked": 1,
+  "unlocked": 11,
   "stars": [
     0,
     0,
@@ -29,7 +29,7 @@
     "kity_laptop": false,
     "phone_default": true,
     "kity_phone": false,
-    "corn_phone": false 
+    "corn_phone": false
   },
   "equipped": {
     "laptop": "kity_laptop",
