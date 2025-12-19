@@ -29,10 +29,10 @@
     "kity_laptop": false,
     "phone_default": true,
     "kity_phone": false,
-    "corn_phone": false 
+    "corn_phone": false
   },
   "equipped": {
-    "laptop": "kity_laptop",
-    "phone": "kity_phone"
+    "laptop": "laptop_default",
+    "phone": "phone_default"
   }
 }
