@@ -140,6 +140,11 @@ def update_play(game, dt):
         dynamic_level = min(TOTAL_LEVELS, 1 + int(game.play["score"] // 500))
         game.selected_level = dynamic_level
         params = make_level_params(dynamic_level - 1)
+        # Make boss faster every 500 points
+        milestone = int(game.play["score"] // 500)
+        speed_factor = 1.0 + milestone * 0.1  # 10% faster each milestone
+        params["walk_in"] = max(0.4, params["walk_in"] / speed_factor)
+        params["walk_out"] = max(0.4, params["walk_out"] / speed_factor)
     else:
         params = make_level_params(game.selected_level - 1)
 
